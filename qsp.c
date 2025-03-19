@@ -141,14 +141,14 @@ void* global_sort(void *arg) {
     int chunk_size = tdata->chunk_size;
     int num_threads = tdata->num_threads;
     int *pivots = tdata->pivots;
+    int global_begin = tdata->begin;
+    int global_end = tdata->end;
 
     if(size == 1) return NULL;
 
     int localid = myid % size;
     int group = myid / size;
 
-    int global_begin = myid * chunk_size;  
-    int global_end = (myid == num_threads - 1) ? N - 1 : (myid + 1) * chunk_size - 1;
     pthread_barrier_wait(&barrier);
     if (localid == 0) {
         int pivot_index = (global_begin + global_end) / 2;
@@ -163,7 +163,7 @@ void* global_sort(void *arg) {
     while(loop <= global_end && arr[loop] < pivot){
         loop++;
     }
-    printf("Start = %d, End = %d\nThreadid is %d=%d:%d = pivot %d @ %d\n\n", global_begin, global_end, myid, group, localid, pivots[group], loop - global_begin);
+    printf("Start = %d, End = %d\nThreadid is %d=%d:%d = pivot %d @ %d\n\n", global_begin, global_end, myid, group, localid, pivots[group], loop);
 
     thread_data next_partition = {arr, global_begin, global_end, myid, size / 2, chunk_size, num_threads, N, pivots};
     global_sort(&next_partition);
