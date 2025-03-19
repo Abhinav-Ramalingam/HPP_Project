@@ -9,25 +9,20 @@ void quick_sort(int *, int, int);
 void* thread_quick_sort(void *arg);
 void* global_sort(void *arg);
 
-// Structure to hold data for each thread
+// Unified structure to hold data for each thread
 typedef struct {
     int *arr;
-    int start;
+    int begin;
     int end;
-} local_data;
-
-
-typedef struct {
     int myid;
     int size;
     int chunk_size;
+    int num_threads;
     int N;
-    int *arr;
     int *pivots;
-} global_data;
+} thread_data;
 
 pthread_barrier_t barrier;
-
 
 int main(int ac, char* av[]) {
     if (ac != 5) {
@@ -39,7 +34,7 @@ int main(int ac, char* av[]) {
     char *output_file = av[3];
     int num_threads = atoi(av[4]);
 
-    double start = omp_get_wtime(), end;
+    double start = omp_get_wtime(), stop;
 
     // Phase 1: Read input from file
     int *arr = (int *)calloc(N, sizeof(int));
@@ -64,23 +59,29 @@ int main(int ac, char* av[]) {
     }
     fclose(input_fp);
 
-    end = omp_get_wtime();
-    printf("Input time(s): %lf\n", end - start);
-    start = end;
+    stop = omp_get_wtime();
+    printf("Input time(s): %lf\n", stop - start);
+    start = stop;
 
     // Phase 2: Sorting the data locally within threads
     pthread_t threads[num_threads];
-    local_data data[num_threads];
-    global_data gdata[num_threads];
+    thread_data tdata[num_threads];
     
     int chunk_size = N / num_threads;
     int pivots[num_threads];
     
     for (int t = 0; t < num_threads; t++) {
-        data[t].arr = arr;
-        data[t].start = t * chunk_size;
-        data[t].end = (t == num_threads - 1) ? N - 1 : (t + 1) * chunk_size;
-        pthread_create(&threads[t], NULL, thread_quick_sort, (void*)&data[t]);
+        tdata[t].arr = arr;
+        tdata[t].begin = t * chunk_size;
+        tdata[t].end = (t == num_threads - 1) ? N - 1 : (t + 1) * chunk_size - 1;
+        printf("interval == %d!!\n",tdata[t].end - tdata[t].begin);
+        tdata[t].pivots = pivots;
+        tdata[t].myid = t;
+        tdata[t].size = num_threads;
+        tdata[t].num_threads = num_threads;
+        tdata[t].chunk_size = chunk_size;
+        tdata[t].N = N;
+        pthread_create(&threads[t], NULL, thread_quick_sort, (void*)&tdata[t]);
     }
 
     for (int t = 0; t < num_threads; t++) {
@@ -90,26 +91,17 @@ int main(int ac, char* av[]) {
     pthread_barrier_init(&barrier, NULL, num_threads);
     //Phase 3: Sorting the data globally across threads
     for (int t = 0; t < num_threads; t++) {
-        gdata[t].arr = arr;
-        gdata[t].myid = t;
-        gdata[t].size = num_threads;
-        gdata[t].pivots = pivots;  
-        gdata[t].N = N;
-        gdata[t].chunk_size = chunk_size;
-        pthread_create(&threads[t], NULL, global_sort, (void*)&gdata[t]);
+        pthread_create(&threads[t], NULL, global_sort, (void*)&tdata[t]);
     }
     
-
     for (int t = 0; t < num_threads; t++) {
         pthread_join(threads[t], NULL);
     }
     pthread_barrier_destroy(&barrier);
 
-
-
-    end = omp_get_wtime();
-    printf("Sorting time(s): %lf\n", end - start);
-    start = end;
+    stop = omp_get_wtime();
+    printf("Sorting time(s): %lf\n", stop - start);
+    start = stop;
 
     // Phase 4: Write sorted numbers to output file
     FILE *output_fp = fopen(output_file, "w");
@@ -127,60 +119,66 @@ int main(int ac, char* av[]) {
 
     free(arr);
 
-    end = omp_get_wtime();
-    printf("Output time(s): %lf\n", end - start);
+    stop = omp_get_wtime();
+    printf("Output time(s): %lf\n", stop - start);
 
     return 0;
 }
 
 // Function for thread to run quicksort on a portion of the array
 void* thread_quick_sort(void *arg) {
-    local_data *data = (local_data*)arg;
-    quick_sort(data->arr, data->start, data->end);
+    thread_data *data = (thread_data*)arg;
+    quick_sort(data->arr, data->begin, data->end);
     return NULL;
 }
 
-void*global_sort(void *arg){
-
-    global_data *gdata = (global_data*)arg;
-    int myid = gdata->myid;
-    int size = gdata->size;
-    int N = gdata->N;
-    int *arr = gdata->arr;
-    int chunk_size = gdata->chunk_size;
-    int *pivots = gdata->pivots;
+void* global_sort(void *arg) {
+    thread_data *tdata = (thread_data*)arg;
+    int myid = tdata->myid;
+    int size = tdata->size;
+    int N = tdata->N;
+    int *arr = tdata->arr;
+    int chunk_size = tdata->chunk_size;
+    int num_threads = tdata->num_threads;
+    int *pivots = tdata->pivots;
 
     if(size == 1) return NULL;
 
     int localid = myid % size;
     int group = myid / size;
 
+    int global_begin = myid * chunk_size;  
+    int global_end = (myid == num_threads - 1) ? N - 1 : (myid + 1) * chunk_size - 1;
     pthread_barrier_wait(&barrier);
     if (localid == 0) {
-        int start = myid * chunk_size;  
-        int end = (myid == size - 1)? N-1 : (myid + 1) * chunk_size - 1; 
-        int pivot_index = (start + end) / 2;
+        int pivot_index = (global_begin + global_end) / 2;
         pivots[group] = arr[pivot_index];
     }
 
     pthread_barrier_wait(&barrier);
-    printf("Threadid is %d=%d:%d and pivot is %d\n", myid, group, localid, pivots[group]);
-    printf("_____\n");
-    global_data next_partition = {myid, size / 2, chunk_size, N, arr, pivots};
+
+    int pivot = pivots[group];
+
+    int loop = global_begin;
+    while(loop <= global_end && arr[loop] < pivot){
+        loop++;
+    }
+    printf("Start = %d, End = %d\nThreadid is %d=%d:%d = pivot %d @ %d\n\n", global_begin, global_end, myid, group, localid, pivots[group], loop - global_begin);
+
+    thread_data next_partition = {arr, global_begin, global_end, myid, size / 2, chunk_size, num_threads, N, pivots};
     global_sort(&next_partition);
 
     return NULL;
-
 }
 
 // Standard quicksort function
-void quick_sort(int *arr, int start, int end) {
-    if (start >= end) return;
+void quick_sort(int *arr, int begin, int end) {
+    if (begin >= end) return;
 
     int pivot = arr[end]; 
-    int i = start - 1;
+    int i = begin - 1;
 
-    for (int j = start; j < end; j++) {
+    for (int j = begin; j < end; j++) {
         if (arr[j] <= pivot) {
             i++;
             int temp = arr[i];
@@ -193,6 +191,6 @@ void quick_sort(int *arr, int start, int end) {
     arr[i + 1] = arr[end];
     arr[end] = temp;
 
-    quick_sort(arr, start, i);
+    quick_sort(arr, begin, i);
     quick_sort(arr, i + 2, end);
 }
