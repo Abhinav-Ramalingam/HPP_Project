@@ -16,13 +16,18 @@ typedef struct {
     int end;
 } local_data;
 
-/*
+
 typedef struct {
     int myid;
+    int size;
+    int chunk_size;
+    int N;
     int *arr;
-    int *pivot;
+    int *pivots;
 } global_data;
-*/
+
+pthread_barrier_t barrier;
+
 
 int main(int ac, char* av[]) {
     if (ac != 5) {
@@ -66,8 +71,10 @@ int main(int ac, char* av[]) {
     // Phase 2: Sorting the data locally within threads
     pthread_t threads[num_threads];
     local_data data[num_threads];
+    global_data gdata[num_threads];
     
     int chunk_size = N / num_threads;
+    int pivots[num_threads];
     
     for (int t = 0; t < num_threads; t++) {
         data[t].arr = arr;
@@ -79,20 +86,27 @@ int main(int ac, char* av[]) {
     for (int t = 0; t < num_threads; t++) {
         pthread_join(threads[t], NULL);
     }
-/*
+
+    pthread_barrier_init(&barrier, NULL, num_threads);
     //Phase 3: Sorting the data globally across threads
     for (int t = 0; t < num_threads; t++) {
-        data[t].arr = arr;
-        data[t].start = t * chunk_size;
-        data[t].end = (t == num_threads - 1) ? N - 1 : (t + 1) * chunk_size;
-        pthread_create(&threads[t], NULL, thread_quick_sort, (void*)&data[t]);
+        gdata[t].arr = arr;
+        gdata[t].myid = t;
+        gdata[t].size = num_threads;
+        gdata[t].pivots = pivots;  
+        gdata[t].N = N;
+        gdata[t].chunk_size = chunk_size;
+        pthread_create(&threads[t], NULL, global_sort, (void*)&gdata[t]);
     }
+    
 
     for (int t = 0; t < num_threads; t++) {
         pthread_join(threads[t], NULL);
     }
+    pthread_barrier_destroy(&barrier);
 
-*/
+
+
     end = omp_get_wtime();
     printf("Sorting time(s): %lf\n", end - start);
     start = end;
@@ -121,12 +135,41 @@ int main(int ac, char* av[]) {
 
 // Function for thread to run quicksort on a portion of the array
 void* thread_quick_sort(void *arg) {
-    pthread_data *data = (pthread_data*)arg;
+    local_data *data = (local_data*)arg;
     quick_sort(data->arr, data->start, data->end);
     return NULL;
 }
 
 void*global_sort(void *arg){
+
+    global_data *gdata = (global_data*)arg;
+    int myid = gdata->myid;
+    int size = gdata->size;
+    int N = gdata->N;
+    int *arr = gdata->arr;
+    int chunk_size = gdata->chunk_size;
+    int *pivots = gdata->pivots;
+
+    if(size == 1) return NULL;
+
+    int localid = myid % size;
+    int group = myid / size;
+
+    pthread_barrier_wait(&barrier);
+    if (localid == 0) {
+        int start = myid * chunk_size;  
+        int end = (myid == size - 1)? N-1 : (myid + 1) * chunk_size - 1; 
+        int pivot_index = (start + end) / 2;
+        pivots[group] = arr[pivot_index];
+    }
+
+    pthread_barrier_wait(&barrier);
+    printf("Threadid is %d=%d:%d and pivot is %d\n", myid, group, localid, pivots[group]);
+    printf("_____\n");
+    global_data next_partition = {myid, size / 2, chunk_size, N, arr, pivots};
+    global_sort(&next_partition);
+
+    return NULL;
 
 }
 
