@@ -1,3 +1,5 @@
+//ALGORITHM:
+
 global_sort(array, numthreads, threadid){
     if(numthreads == 1){
         return
