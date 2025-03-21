@@ -37,7 +37,7 @@ static void local_sort(int* arr, const int lo, const int hi) {
 typedef struct static_args_t {
     unsigned int   N;
     int NT;
-    unsigned char  S;
+    unsigned char  strat;
     int **thread_local_arr, **exchange_arr;
     int *arr, *exchange_arr_sizes, *pivots, *local_sizes, *medians;
     pthread_barrier_t *bar_pair, *bar_group;
@@ -56,7 +56,7 @@ static void* global_sort(void* targs) {
     const static_args_t* s_args = args->static_args;
     const unsigned int   N      = s_args->N;         // input size
     const int NT      = s_args->NT;         // num threads
-    const unsigned char  S      = s_args->S;         // pivot strategy
+    const unsigned char  strat      = s_args->strat;         // pivot strategy
     int*  arr   = s_args->arr;  // global input array
     int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
     int** exchange_arr  = s_args->thread_local_arr; // local subarrays shifted to pivot index
@@ -110,18 +110,18 @@ static void* global_sort(void* targs) {
         // also their median might not be updated yet
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
         if (localid == 0) {
-            if (S == 1) {
+            if (strat == 1) {
                 // strategy 1
                 // median of thread 0 of each group
                 pivot = medians[threadid];
-            } else if (S == 2) {
+            } else if (strat == 2) {
                 // strategy 2
                 // mean of all medians in a group
                 long int mm = 0;
                 for (int i = threadid; i < threadid + tpg; i++)
                     mm += medians[i];
                 pivot = mm / tpg;
-            } else if (S == 3) {
+            } else if (strat == 3) {
                 // strategy 3
                 // mean of center 2 medians in a group
                 local_sort(medians, threadid, threadid + tpg - 1);
@@ -226,7 +226,7 @@ int main(int ac, char** av) {
         printf("input - Input Numbers Dataset Filepath (generate with gen_data.c)\n");
         printf("output - Filepath to store the sorted elements\n");
         printf("NT - Number of Processors to Utilise\n");
-        printf("S - Strategy to Select the pivot element:\n");
+        printf("strat - Strategy to Select the pivot element:\n");
         printf("\t\'a\' - Pick Median of Processor-0 in Processor Group\n");
         printf("\t\'b\' - Select the mean of all medians in respective processor set\n");
         printf("\t\'c\' - Sort the medians and select the mean value of the two middlemost medians in each processor set\n");
