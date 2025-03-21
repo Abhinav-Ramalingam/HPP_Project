@@ -47,30 +47,27 @@ static void* global_sort(void* targs) {
 
     // copy input
     const args_t*        args   = (args_t*) targs;
-    const int threadid    = args->threadid;         // thread num
+    const int threadid    = args->threadid;      
     const static_args_t* s_args = args->static_args;
-    const int   N      = s_args->N;         // input size
-    const int NT      = s_args->NT;         // num threads
-    const char  strat      = s_args->strat;         // pivot strategy
-    int*  arr   = s_args->arr;  // global input array
-    int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
-    int** exchange_arr  = s_args->thread_local_arr; // local subarrays shifted to pivot index
-    int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; // size from/to pivot index in local subarrays
-    int*  pivots   = s_args->pivots;  // pivot elements per local subarray
-    int*  local_sizes   = s_args->local_sizes;  // size of local subarrays
-    int*  medians   = s_args->medians;  // median elements per local subarray
-    pthread_barrier_t* bar_pair = s_args->bar_pair; // pairs barriers
-    pthread_barrier_t* bar_group = s_args->bar_group; // group barriers
+    const int   N      = s_args->N;     
+    const int NT      = s_args->NT;       
+    const char  strat      = s_args->strat;      
+    int*  arr   = s_args->arr;  
+    int** thread_local_arr  = s_args->thread_local_arr;
+    int** exchange_arr  = s_args->thread_local_arr; 
+    int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; 
+    int*  pivots   = s_args->pivots;  
+    int*  local_sizes   = s_args->local_sizes; 
+    int*  medians   = s_args->medians;  
+    pthread_barrier_t* bar_pair = s_args->bar_pair; 
+    pthread_barrier_t* bar_group = s_args->bar_group;
 
-    // inclusive lower bound of this thread's subarray on arr
     int chunk_size = N / NT;
     int begin = threadid * chunk_size;
-    // inclusive upper bound of this thread's subarray on arr
     int end = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
-    // total number of elements in this thread's subarray on arr
-    chunk_size = end - begin + 1;
+    chunk_size = end - begin + 1; //Not all thread's actual chunk_size is N / NT
 
-    // copy to local subarray otherwise reallocating won't work
+    //Create a local array of chunk_size in this thread executing the global_sort
     int local_size = chunk_size * sizeof(int);
     int* local_arr  = (int*) malloc(local_size);
     thread_local_arr[threadid] = local_arr;
@@ -78,18 +75,16 @@ static void* global_sort(void* targs) {
     int* merged_arr;
     medians[threadid] = 0;
 
-    // sort subarray locally
+    //local sort on LOCAL array
     local_sort(local_arr, 0, chunk_size - 1);
 
-    int localid, groupid, exchangeid; // local id, group id, partner thread id
+    int localid, groupid, exchangeid; //Identifier of thread within a group and, group it belongs to, identifier of partner
+    int tpg = NT, gpi = 1; //threads per group and groups per iteration
+    int group_barrier_id = 0, pair_barrier_id = 0; //Idenfier of which barrier is being waited on
     int pivot;                        // value of pivot element
     int local_arr_size;              // number of elements of subarray split according to p
     int local_arr_index;          // index shift of local subarray to reach split
 
-    // for finding the correct barriers in the collective arrays
-    int group_barrier_id = 0;
-    int pair_barrier_id = 0;
-    int tpg = NT, gpi = 1; //threads per group and groups per iteration
 
     // divide threads into groups until no smaller groups can be formed
     while (tpg > 1) {
