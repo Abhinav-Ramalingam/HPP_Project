@@ -77,7 +77,7 @@ static int split(const int* arr, const unsigned int n, const int p) {
 */
 typedef struct static_args_t {
     unsigned int   N;
-    unsigned short T;
+    int T;
     unsigned char  S;
     int **thread_local_arr, **exchange_arr;
     int *arr, *exchange_arr_sizes, *ps, *ns, *medians;
@@ -85,7 +85,7 @@ typedef struct static_args_t {
 } static_args_t;
 
 typedef struct args_t {
-    unsigned short tid;
+    int tid;
     static_args_t* static_args;
 } args_t;
 
@@ -93,10 +93,10 @@ static void* thread_worker(void* targs) {
 
     // copy input
     const args_t*        args   = (args_t*) targs;
-    const unsigned short tid    = args->tid;         // thread num
+    const int tid    = args->tid;         // thread num
     const static_args_t* s_args = args->static_args;
     const unsigned int   N      = s_args->N;         // input size
-    const unsigned short T      = s_args->T;         // num threads
+    const int T      = s_args->T;         // num threads
     const unsigned char  S      = s_args->S;         // pivot strategy
     int*  arr   = s_args->arr;  // global input array
     int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
@@ -125,17 +125,17 @@ static void* thread_worker(void* targs) {
     // sort subarray locally
     serial_qs(ys, 0, n - 1);
 
-    unsigned short lid, gid, rid; // local id, group id, partner thread id
-    unsigned short t = T;         // threads per group
+    int lid, gid, rid; // local id, group id, partner thread id
+    int t = T;         // threads per group
     int p;                        // value of pivot element
     unsigned int s;               // index of pivot element + 1
     unsigned int local_arr_size;              // number of elements of subarray split according to p
     unsigned int local_arr_index;          // index shift of local subarray to reach split
 
     // for finding the correct barriers in the collective arrays
-    unsigned short group_barrier_id = 0;
-    unsigned short pair_barrier_id = 0;
-    unsigned short num_gs         = 1;
+    int group_barrier_id = 0;
+    int pair_barrier_id = 0;
+    int gpi         = 1;
 
     // divide threads into groups until no smaller groups can be formed
     while (t > 1) {
@@ -161,7 +161,7 @@ static void* thread_worker(void* targs) {
                 // strategy 2
                 // mean of all medians in a group
                 long int mm = 0;
-                for (unsigned short i = tid; i < tid + t; i++)
+                for (int i = tid; i < tid + t; i++)
                     mm += medians[i];
                 p = mm / t;
             } else if (S == 3) {
@@ -174,7 +174,7 @@ static void* thread_worker(void* targs) {
                 p = medians[tid];
             }
             // distribute pivot element within group
-            for (unsigned short i = tid; i < tid + t; i++)
+            for (int i = tid; i < tid + t; i++)
                     ps[i] = p;
         }
         pthread_barrier_wait(bar_group + group_barrier_id + gid);
@@ -234,8 +234,8 @@ static void* thread_worker(void* targs) {
         ys              = merged_arr;          // swap local pointer
         thread_local_arr[tid]        = ys;          // update global pointer
         t               = t >> 1;      // half group size
-        group_barrier_id += num_gs;      // shift group barrier pointer
-        num_gs          = num_gs << 1; // double number of groups
+        group_barrier_id += gpi;      // shift group barrier pointer
+        gpi          = gpi << 1; // double number of groups
     }
 
     // merge local subarrays back into arr
@@ -245,7 +245,7 @@ static void* thread_worker(void* targs) {
         pthread_barrier_wait(bar_group);
     // find location of local subarray on arr
     unsigned int n_prev = 0;
-    for (unsigned short i = 0; i < tid; i++)
+    for (int i = 0; i < tid; i++)
         n_prev += ns[i];
     // copy
     memcpy(arr + n_prev, ys, n * sizeof(int));
@@ -313,27 +313,27 @@ int main(int ac, char** av) {
     int*  medians  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
     
     pthread_barrier_t* bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
-    for (unsigned short i = 0; i < NT; i++)
+    for (int i = 0; i < NT; i++)
         pthread_barrier_init(bar_pair + i, NULL, 2);
     
     // let T = 16, then
     // bar_group = [ 0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
     // b_counts = [16, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2]
     // num_bs_g =  1  +  2  +     4     +          8
-    unsigned short bar_group_count = 0;
-    for (unsigned short j = 1; j < NT; j = j << 1)
+    int bar_group_count = 0;
+    for (int j = 1; j < NT; j = j << 1)
         bar_group_count += j;  
     pthread_barrier_t* bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
-    unsigned short l = 0;
-    for (unsigned short j = 1; j < NT; j = j << 1)
-        for (unsigned short k = 0; k < j; k++)
+    int l = 0;
+    for (int j = 1; j < NT; j = j << 1)
+        for (int k = 0; k < j; k++)
             pthread_barrier_init(bar_group + l++, NULL, NT / j);
     
     static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, ps, ns, medians, bar_pair, bar_group};
     pthread_t* threads = (pthread_t*) malloc(NT * sizeof(pthread_t));
     
     // fork
-    for (unsigned short i = 0; i < NT; i++) {
+    for (int i = 0; i < NT; i++) {
         // malloc because otherwise it will reuse pointers or something
         args_t* targs = (args_t*) malloc(sizeof(args_t));
         targs->tid = i;
@@ -342,7 +342,7 @@ int main(int ac, char** av) {
     }
     
     // join
-    for (unsigned short i = 0; i < NT; i++)
+    for (int i = 0; i < NT; i++)
         pthread_join(threads[i], NULL);
     
     // free shared memory
@@ -353,9 +353,9 @@ int main(int ac, char** av) {
     free(ns);
     free(medians);
     free(threads);
-    for (unsigned short i = 0; i < NT; i++)
+    for (int i = 0; i < NT; i++)
         pthread_barrier_destroy(bar_pair + i);
-    for (unsigned short i = 0; i < bar_group_count; i++)
+    for (int i = 0; i < bar_group_count; i++)
         pthread_barrier_destroy(bar_group + i);
     free(bar_pair);
     free(bar_group);

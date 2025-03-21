@@ -1,0 +1,28 @@
+        merge(zs, ys + lshift, rss[rid], ln, rns[rid]);
+
+                        zs          ys + lshift     rss[rid]                ln                  rns[rid]
+static void merge(int* xs, const int* ys, const int* zs, const unsigned int y_n, const unsigned int z_n) {
+    int i = 0, j = 0, k = 0;
+    while (j < y_n && k < z_n)
+        if (ys[j] < zs[k])  xs[i++] = ys[j++];
+        else                xs[i++] = zs[k++];
+    for (; j < y_n; j++)    xs[i++] = ys[j];
+    for (; k < z_n; k++)    xs[i++] = zs[k];
+}
+------------------
+int i=0; j=0; k = 0;
+
+while (j < ln && k < rns[rid])
+    if ((ys + lshift)[j] < rss[rid][k])     zs[i++] = (ys + lshift)[j++]
+    else                                    zs[i++] = rss[rid][k++]
+for (; j < ln; j++)                         zs[i++] = (ys + lshift)[j]
+for (; k < rns[rid]; k++)                   zs[i++] =  rss[rid][k]
+-----------------------
+
+int i=0; j=0; k = 0;
+
+while (j < local_arr_size && k < exchange_arr_sizes[exchangeid])
+    if ((local_arr + local_arr_index)[j] < exchange_arr[exchangeid][k])     merged_arr[i++] = (local_arr + local_arr_index)[j++]
+    else                                                                    merged_arr[i++] = exchange_arr[exchangeid][k++]
+for (; j < local_arr_size; j++)                                             merged_arr[i++] = (local_arr + local_arr_index)[j]
+for (; k < exchange_arr_sizes[exchangeid]; k++)                             merged_arr[i++] =  exchange_arr[exchangeid][k]
