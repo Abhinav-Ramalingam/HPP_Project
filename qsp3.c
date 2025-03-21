@@ -70,18 +70,7 @@ static int split(const int* arr, const unsigned int n, const int p) {
     return s;
 }
 
-/**
- * Merge two arrays ys and merged_arr on arr
- * as taken from the lecture
-*/
-static void merge(int* arr, const int* ys, const int* merged_arr, const unsigned int y_n, const unsigned int z_n) {
-    int i = 0, j = 0, k = 0;
-    while (j < y_n && k < z_n)
-        if (ys[j] < merged_arr[k])  arr[i++] = ys[j++];
-        else                arr[i++] = merged_arr[k++];
-    for (; j < y_n; j++)    arr[i++] = ys[j];
-    for (; k < z_n; k++)    arr[i++] = merged_arr[k];
-}
+
 
 /**
  * Input arguments for the thread workers,
@@ -222,7 +211,23 @@ static void* thread_worker(void* targs) {
         // merge local and remote elements in place of new local subarray
         n = local_arr_size + exchange_arr_sizes[rid];
         merged_arr = (int*) malloc(n * sizeof(int));
-        merge(merged_arr, ys + local_arr_index, exchange_arr[rid], local_arr_size, exchange_arr_sizes[rid]);
+        
+        int i = 0, j = 0, k = 0;
+        while (j < local_arr_size && k < exchange_arr_sizes[rid]) {
+            if ((ys + local_arr_index)[j] < exchange_arr[rid][k]) {
+                merged_arr[i++] = (ys + local_arr_index)[j++];
+            } else {
+                merged_arr[i++] = exchange_arr[rid][k++];
+            }
+        }
+        while (j < local_arr_size) {
+            merged_arr[i++] = (ys + local_arr_index)[j++];
+        }
+        while (k < exchange_arr_sizes[rid]) {
+            merged_arr[i++] = exchange_arr[rid][k++];
+        }
+
+        
         pthread_barrier_wait(bar_pair + pair_barrier_id);
 
         // iterate
