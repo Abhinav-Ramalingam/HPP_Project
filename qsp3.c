@@ -68,21 +68,23 @@ static void* global_sort(void* targs) {
     pthread_barrier_t* bar_group = s_args->bar_group; // group barriers
 
     // inclusive lower bound of this thread's subarray on arr
-    unsigned int lo = threadid * (N / NT);
+    int chunk_size = N / NT;
+    unsigned int lo = threadid * chunk_size;
     // inclusive upper bound of this thread's subarray on arr
-    unsigned int hi = threadid < NT - 1 ? (threadid + 1) * (N / NT) - 1 : N - 1;
+    unsigned int hi = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
     // total number of elements in this thread's subarray on arr
-    unsigned int n = hi - lo + 1;
+    chunk_size = hi - lo + 1;
 
     // copy to local subarray otherwise reallocating won't work
-    int* local_arr  = (int*) malloc(n * sizeof(int));
+    int local_size = chunk_size * sizeof(int);
+    int* local_arr  = (int*) malloc(local_size);
     thread_local_arr[threadid] = local_arr;
-    memcpy(local_arr, arr + lo, n * sizeof(int));
+    memcpy(local_arr, arr + lo, local_size);
     int* merged_arr;
     medians[threadid] = 0;
 
     // sort subarray locally
-    local_sort(local_arr, 0, n - 1);
+    local_sort(local_arr, 0, chunk_size - 1);
 
     int localid, groupid, exchangeid; // local id, group id, partner thread id
     int pivot;                        // value of pivot element
@@ -100,10 +102,7 @@ static void* global_sort(void* targs) {
         localid = threadid % tpg;
         groupid = threadid / tpg;
 
-        // update current median if elements exist
-        // what is a good solution for n == 0?
-        if (n > 0)
-            medians[threadid] = local_arr[n >> 1];
+        if (chunk_size != 0)  medians[threadid] = local_arr[chunk_size >> 1];
 
         // wait for threads to finish splitting in previous iteration
         // otherwise they might split by the pivot element of the next iteration
@@ -117,10 +116,10 @@ static void* global_sort(void* targs) {
             } else if (strat == 2) {
                 // strategy 2
                 // mean of all medians in a group
-                long int mm = 0;
+                long int sum = 0;
                 for (int i = threadid; i < threadid + tpg; i++)
-                    mm += medians[i];
-                pivot = mm / tpg;
+                    sum += medians[i];
+                pivot = sum / tpg;
             } else if (strat == 3) {
                 // strategy 3
                 // mean of center 2 medians in a group
@@ -139,7 +138,7 @@ static void* global_sort(void* targs) {
         // find split point according to pivot element
         pivot = pivots[threadid];
         int split = 0;
-        while (split < n && local_arr[split] <= pivot) {
+        while (split < chunk_size && local_arr[split] <= pivot) {
             split++;
         }
 
@@ -153,13 +152,13 @@ static void* global_sort(void* targs) {
             local_arr_index   = 0;              // local shift to fit split point
             local_arr_size       = split;              // local size of lower part
             exchange_arr[threadid] = local_arr + split;         // remote shift to fit split point
-            exchange_arr_sizes[threadid] = n - split;          // remote size of parnter's lower part
+            exchange_arr_sizes[threadid] = chunk_size - split;          // remote size of parnter's lower part
             pair_barrier_id = exchangeid;      // shift to find partner's barrier
         } else {
             // send lower part
             exchangeid      = threadid - (tpg >> 1);
             local_arr_index   = split;
-            local_arr_size       = n - split;
+            local_arr_size       = chunk_size - split;
             exchange_arr[threadid] = local_arr;
             exchange_arr_sizes[threadid] = split;
             pair_barrier_id = threadid;
@@ -168,8 +167,8 @@ static void* global_sort(void* targs) {
         pthread_barrier_wait(bar_pair + pair_barrier_id);
 
         // merge local and remote elements in place of new local subarray
-        n = local_arr_size + exchange_arr_sizes[exchangeid];
-        merged_arr = (int*) malloc(n * sizeof(int));
+        chunk_size = local_arr_size + exchange_arr_sizes[exchangeid];
+        merged_arr = (int*) malloc(chunk_size * sizeof(int));
         
         int i = 0, j = 0, k = 0;
         while (j < local_arr_size && k < exchange_arr_sizes[exchangeid]) {
@@ -200,7 +199,7 @@ static void* global_sort(void* targs) {
 
     // merge local subarrays back into arr
     // reservate space on arr
-    local_sizes[threadid] = n;
+    local_sizes[threadid] = chunk_size;
     if (NT > 1) // else bar_group was never allocated
         pthread_barrier_wait(bar_group);
     // find location of local subarray on arr
@@ -208,7 +207,7 @@ static void* global_sort(void* targs) {
     for (int i = 0; i < threadid; i++)
         n_prev += local_sizes[i];
     // copy
-    memcpy(arr + n_prev, local_arr, n * sizeof(int));
+    memcpy(arr + n_prev, local_arr, chunk_size * sizeof(int));
 
     // free thread local memory
     free(targs);
