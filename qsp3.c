@@ -176,24 +176,27 @@ static void* global_sort(void* targs) {
 
         // iterate
         free(local_arr);
-        local_arr              = merged_arr;          // swap local pointer
-        thread_local_arr[threadid]        = local_arr;          // update global pointer
-        group_barrier_id += gpi;      // shift group barrier pointer
-        tpg = tpg >> 1; //half the threads/group
-        gpi = gpi << 1; // double the groups/iteration
+        local_arr = merged_arr;           
+        thread_local_arr[threadid] = local_arr;        
+        group_barrier_id += gpi; //Move on to using the next set of barriers for groups of threads
+        tpg = tpg >> 1; //Divide the number of threads/group by 2
+        gpi = gpi << 1; //Multiply the number of groups/iterations by 2
     }
 
-    // merge local subarrays back into arr
-    // reservate space on arr
+    //Final chunk_size of the local_arr after all the swaps
     local_sizes[threadid] = chunk_size;
-    if (NT > 1) // else bar_group was never allocated
+
+    if (NT != 1) {
+        //More than one thread executed
         pthread_barrier_wait(bar_group);
-    // find location of local subarray on arr
-    int n_prev = 0;
+    }
+        
+    //Find the global location of the sorted local array = cumulative sizes of local arrays before current thread's local array
+    int global_loc = 0;
     for (int i = 0; i < threadid; i++)
-        n_prev += local_sizes[i];
-    // copy
-    memcpy(arr + n_prev, local_arr, chunk_size * sizeof(int));
+        global_loc += local_sizes[i];
+    
+    memcpy(arr + global_loc, local_arr, chunk_size * sizeof(int));
 
     // free thread local memory
     free(targs);
