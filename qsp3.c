@@ -81,18 +81,17 @@ static void* global_sort(void* targs) {
     int localid, groupid, exchangeid; //Identifier of thread within a group and, group it belongs to, identifier of partner
     int tpg = NT, gpi = 1; //threads per group and groups per iteration
     int group_barrier_id = 0, pair_barrier_id = 0; //Idenfier of which barrier is being waited on
-    int pivot;                        // value of pivot element
-    int local_arr_size;              // number of elements of subarray split according to p
-    int local_arr_index;          // index shift of local subarray to reach split
 
 
     // divide threads into groups until no smaller groups can be formed
     while (tpg > 1) {
 
+        
+        if (chunk_size != 0)  medians[threadid] = local_arr[chunk_size >> 1];
+
+        int pivot;             
         localid = threadid % tpg;
         groupid = threadid / tpg;
-
-        if (chunk_size != 0)  medians[threadid] = local_arr[chunk_size >> 1];
 
         // wait for threads to finish splitting in previous iteration
         // otherwise they might split by the pivot element of the next iteration
@@ -134,8 +133,7 @@ static void* global_sort(void* targs) {
 
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
-
-        // send data
+        int local_arr_size, local_arr_index;          
         if (localid < (tpg >> 1)) {
             // send upper part
             exchangeid      = threadid + (tpg >> 1); // remote partner id
