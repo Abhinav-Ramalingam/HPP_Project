@@ -8,14 +8,14 @@
 static void local_sort(int* arr, const int lo, const int hi) {
     if (lo < hi) {
         const int mi = lo + ((hi - lo) >> 1);
-        const int p = arr[mi];
+        const int pivot = arr[mi];
         int tmp = arr[mi];
         arr[mi] = arr[hi];
         arr[hi] = tmp;
         
         int i = lo - 1;
         for (int j = lo; j < hi; j++) {
-            if (arr[j] <= p) {
+            if (arr[j] <= pivot) {
                 i++;
                 tmp = arr[i];
                 arr[i] = arr[j];
@@ -86,7 +86,7 @@ static void* global_sort(void* targs) {
 
     int lid, groupid, exchangeid; // local id, group id, partner thread id
     int t = NT;         // threads per group
-    int p;                        // value of pivot element
+    int pivot;                        // value of pivot element
     unsigned int local_arr_size;              // number of elements of subarray split according to p
     unsigned int local_arr_index;          // index shift of local subarray to reach split
 
@@ -114,33 +114,33 @@ static void* global_sort(void* targs) {
             if (S == 1) {
                 // strategy 1
                 // median of thread 0 of each group
-                p = medians[threadid];
+                pivot = medians[threadid];
             } else if (S == 2) {
                 // strategy 2
                 // mean of all medians in a group
                 long int mm = 0;
                 for (int i = threadid; i < threadid + t; i++)
                     mm += medians[i];
-                p = mm / t;
+                pivot = mm / t;
             } else if (S == 3) {
                 // strategy 3
                 // mean of center 2 medians in a group
                 local_sort(medians, threadid, threadid + t - 1);
-                p = (medians[threadid + (t >> 1) - 1] + medians[threadid + (t >> 1)]) >> 1;
+                pivot = (medians[threadid + (t >> 1) - 1] + medians[threadid + (t >> 1)]) >> 1;
             } else {
                 // default to strategy 1
-                p = medians[threadid];
+                pivot = medians[threadid];
             }
             // distribute pivot element within group
             for (int i = threadid; i < threadid + t; i++)
-                    pivots[i] = p;
+                    pivots[i] = pivot;
         }
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
         // find split point according to pivot element
-        p = pivots[threadid];
+        pivot = pivots[threadid];
         int s = 0;
-        while (s < n && local_arr[s] <= p) {
+        while (s < n && local_arr[s] <= pivot) {
             s++;
         }
 
