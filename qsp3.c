@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
-#include <sys/time.h>
+#include <omp.h>
 
 typedef struct static_args_t {
     int   N;
@@ -41,6 +41,8 @@ int main(int ac, char** av) {
     int NT = atoi(av[4]);
     char strat = av[5][0];
 
+    double start = omp_get_wtime(), stop;
+
     /**** PHASE 1: READ INPUT FROM FILE ****/
 
     int *arr = (int *)calloc(N, sizeof(int));
@@ -65,6 +67,9 @@ int main(int ac, char** av) {
     }
     fclose(input_fp);
 
+    stop = omp_get_wtime();
+    printf("Input time(s): %lf\n", stop - start);
+    start = stop;
 
     /**** PHASE 2: SORT INPUT ****/
     int** thread_local_arr = (int**) malloc(NT * sizeof(int*)); // local subarrays
@@ -122,6 +127,9 @@ int main(int ac, char** av) {
     free(bar_pair);
     free(bar_group);
     
+    stop = omp_get_wtime();
+    printf("Sorting time(s): %lf\n", stop - start);
+    start = stop;
 
     /**** PHASE 3: WRITE OUTPUT TO FILE ****/
     FILE *output_fp = fopen(outputfile, "w");
@@ -136,8 +144,12 @@ int main(int ac, char** av) {
     }
     fprintf(output_fp, "\n");
     fclose(output_fp);
-
+    
     free(arr);
+
+    stop = omp_get_wtime();
+    printf("Output time(s): %lf\n", stop - start);
+    
     return 0;
 }
 
