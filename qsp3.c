@@ -4,19 +4,19 @@
 #include <string.h>
 #include <omp.h>
 
-typedef struct static_args_t {
+typedef struct thread_const_data_t {
     int   N;
     int NT;
     char  strat;
     int **thread_local_arr, **exchange_arr;
     int *arr, *exchange_arr_sizes, *pivots, *local_sizes, *medians;
     pthread_barrier_t *bar_pair, *bar_group;
-} static_args_t;
+} thread_const_data_t;
 
-typedef struct args_t {
+typedef struct {
     int threadid;
-    static_args_t* static_args;
-} args_t;
+    thread_const_data_t* t_const_args;
+} thread_data_t;
 
 void* global_sort(void *);
 void local_sort(int *, int, int);
@@ -104,14 +104,14 @@ int main(int ac, char** av) {
 
     //Create Threads
     pthread_t threads[NT];
-    static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, pivots, local_sizes, medians, bar_pair, bar_group};
+    thread_const_data_t t_const_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, pivots, local_sizes, medians, bar_pair, bar_group};
     
     for (t = 0; t < NT; t++) {
         // malloc because otherwise it will reuse pointers or something
-        args_t* targs = (args_t*) malloc(sizeof(args_t));
-        targs->threadid = t;
-        targs->static_args = &static_args;
-        pthread_create(threads + t, NULL, global_sort, (void*) targs);
+        thread_data_t* t_args = (thread_data_t*) malloc(sizeof(thread_data_t));
+        t_args->threadid = t;
+        t_args->t_const_args = &t_const_args;
+        pthread_create(threads + t, NULL, global_sort, (void*) t_args);
     }
     
     // join
@@ -158,12 +158,12 @@ int main(int ac, char** av) {
     return 0;
 }
 
-void* global_sort(void* targs) {
+void* global_sort(void* t_args) {
 
     // copy input
-    const args_t*        args   = (args_t*) targs;
+    const thread_data_t*        args   = (thread_data_t*) t_args;
     const int threadid    = args->threadid;      
-    const static_args_t* s_args = args->static_args;
+    const thread_const_data_t* s_args = args->t_const_args;
     const int   N      = s_args->N;     
     const int NT      = s_args->NT;       
     const char  strat      = s_args->strat;      
@@ -314,7 +314,7 @@ void* global_sort(void* targs) {
     memcpy(arr + global_loc, local_arr, chunk_size * sizeof(int));
 
     // free thread local memory
-    free(targs);
+    free(t_args);
     free(local_arr);
     return NULL;
 }
