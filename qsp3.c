@@ -198,9 +198,6 @@ void* global_sort(void* t_args) {
     int* local_arr  = (int*) malloc(local_size);
     thread_local_arr[threadid] = local_arr;
     memcpy(local_arr, arr + begin, local_size);
-    
-    int* merged_arr;
-    medians[threadid] = 0;
 
     //local sort on LOCAL array
     local_sort(local_arr, 0, chunk_size - 1);
@@ -209,8 +206,9 @@ void* global_sort(void* t_args) {
     int tpg = NT, gpi = 1; //threads per group and groups per iteration
     int group_barrier_id = 0, pair_barrier_id = 0; //Idenfier of which barrier is being waited on
 
-
-    // divide threads into groups until no smaller groups can be formed
+    medians[threadid] = 0;
+    int* merged_arr;
+      
     while (tpg > 1) {
         //Median Calculation
         if (chunk_size != 0)  medians[threadid] = local_arr[chunk_size >> 1];
