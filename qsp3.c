@@ -20,6 +20,7 @@ typedef struct args_t {
 
 void* global_sort(void *);
 void local_sort(int *, int, int);
+double get_time();
 
 int main(int ac, char** av) {
     if (ac != 6) {
@@ -41,7 +42,7 @@ int main(int ac, char** av) {
     int NT = atoi(av[4]);
     char strat = av[5][0];
 
-    double start = omp_get_wtime(), stop;
+    double start = get_time(), stop;
 
     /**** PHASE 1: READ INPUT FROM FILE ****/
 
@@ -67,7 +68,7 @@ int main(int ac, char** av) {
     }
     fclose(input_fp);
 
-    stop = omp_get_wtime();
+    stop = get_time();
     printf("Input time(s): %lf\n", stop - start);
     start = stop;
 
@@ -131,7 +132,7 @@ int main(int ac, char** av) {
     free(bar_pair);
     free(bar_group);
     
-    stop = omp_get_wtime();
+    stop = get_time();
     printf("Sorting time(s): %lf\n", stop - start);
     start = stop;
 
@@ -151,7 +152,7 @@ int main(int ac, char** av) {
     
     free(arr);
 
-    stop = omp_get_wtime();
+    stop = get_time();
     printf("Output time(s): %lf\n", stop - start);
     
     return 0;
@@ -340,4 +341,11 @@ void local_sort(int *arr, int begin, int end) {
 
     local_sort(arr, begin, i);
     local_sort(arr, i + 2, end);
+}
+
+
+double get_time() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
 }
