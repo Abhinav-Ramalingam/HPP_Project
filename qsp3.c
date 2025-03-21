@@ -104,10 +104,15 @@ int main(int ac, char** av) {
 
     //Create Threads
     pthread_t threads[NT];
-    thread_const_data_t t_const_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, pivots, local_sizes, medians, bar_pair, bar_group};
+    thread_const_data_t t_const_args = {
+        N, NT, strat, 
+        thread_local_arr, exchange_arr, 
+        arr, 
+        exchange_arr_sizes, pivots, local_sizes, medians, 
+        bar_pair, bar_group
+    };
     
     for (t = 0; t < NT; t++) {
-        // malloc because otherwise it will reuse pointers or something
         thread_data_t* t_args = (thread_data_t*) malloc(sizeof(thread_data_t));
         t_args->threadid = t;
         t_args->t_const_args = &t_const_args;
