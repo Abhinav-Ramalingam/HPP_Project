@@ -4,24 +4,6 @@
 #include <string.h>
 #include <sys/time.h>
 
-/**
- * Read list of integers from file
- * as taken from the lecture
-*/
-static int* read_file(char* filename, const int N) {
-    
-    int* arr = (int*) malloc(N * sizeof(int));
-    FILE* file = fopen(filename, "r");
-    int m = fread(arr, sizeof(int), N, file);
-    fclose(file);
-
-    if (m != N) {
-        printf("Unable to read file: %s\n", filename);
-        exit(-1);
-    }
-
-    return arr;
-}
 
 /**
  * Swap two integer values
