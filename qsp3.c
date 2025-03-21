@@ -58,7 +58,7 @@ typedef struct static_args_t {
     int T;
     unsigned char  S;
     int **thread_local_arr, **exchange_arr;
-    int *arr, *exchange_arr_sizes, *ps, *ns, *medians;
+    int *arr, *exchange_arr_sizes, *pivots, *ns, *medians;
     pthread_barrier_t *bar_pair, *bar_group;
 } static_args_t;
 
@@ -80,7 +80,7 @@ static void* thread_worker(void* targs) {
     int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
     int** exchange_arr  = s_args->thread_local_arr; // local subarrays shifted to pivot index
     int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; // size from/to pivot index in local subarrays
-    int*  ps   = s_args->ps;  // pivot elements per local subarray
+    int*  pivots   = s_args->pivots;  // pivot elements per local subarray
     int*  ns   = s_args->ns;  // size of local subarrays
     int*  medians   = s_args->ns;  // median elements per local subarray
     pthread_barrier_t* bar_pair = s_args->bar_pair; // pairs barriers
@@ -152,12 +152,12 @@ static void* thread_worker(void* targs) {
             }
             // distribute pivot element within group
             for (int i = tid; i < tid + t; i++)
-                    ps[i] = p;
+                    pivots[i] = p;
         }
         pthread_barrier_wait(bar_group + group_barrier_id + gid);
 
         // find split point according to pivot element
-        p = ps[tid];
+        p = pivots[tid];
         int s = 0;
         while (s < n && ys[s] <= p) {
             s++;
@@ -288,7 +288,7 @@ int main(int ac, char** av) {
     int** thread_local_arr = (int**) malloc(NT * sizeof(int*)); // local subarrays
     int** exchange_arr = (int**) malloc(NT * sizeof(int*)); // remote subarrays
     int*  exchange_arr_sizes = (int*)  malloc(NT * sizeof(int )); // number of elements 'sent'
-    int*  ps  = (int*)  malloc(NT * sizeof(int )); // pivot element for each thread
+    int*  pivots  = (int*)  malloc(NT * sizeof(int )); // pivot element for each thread
     int*  ns  = (int*)  malloc(NT * sizeof(int )); // number of elements in each thread in arr
     int*  medians  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
     
@@ -309,7 +309,7 @@ int main(int ac, char** av) {
         for (int k = 0; k < j; k++)
             pthread_barrier_init(bar_group + l++, NULL, NT / j);
     
-    static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, ps, ns, medians, bar_pair, bar_group};
+    static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, pivots, ns, medians, bar_pair, bar_group};
     pthread_t* threads = (pthread_t*) malloc(NT * sizeof(pthread_t));
     
     // fork
@@ -329,7 +329,7 @@ int main(int ac, char** av) {
     free(thread_local_arr);
     free(exchange_arr);
     free(exchange_arr_sizes);
-    free(ps);
+    free(pivots);
     free(ns);
     free(medians);
     free(threads);
