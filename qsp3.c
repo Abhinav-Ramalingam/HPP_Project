@@ -36,7 +36,7 @@ static void local_sort(int* arr, const int lo, const int hi) {
 
 typedef struct static_args_t {
     unsigned int   N;
-    int T;
+    int NT;
     unsigned char  S;
     int **thread_local_arr, **exchange_arr;
     int *arr, *exchange_arr_sizes, *pivots, *ns, *medians;
@@ -55,7 +55,7 @@ static void* global_sort(void* targs) {
     const int tid    = args->tid;         // thread num
     const static_args_t* s_args = args->static_args;
     const unsigned int   N      = s_args->N;         // input size
-    const int T      = s_args->T;         // num threads
+    const int NT      = s_args->NT;         // num threads
     const unsigned char  S      = s_args->S;         // pivot strategy
     int*  arr   = s_args->arr;  // global input array
     int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
@@ -68,9 +68,9 @@ static void* global_sort(void* targs) {
     pthread_barrier_t* bar_group = s_args->bar_group; // group barriers
 
     // inclusive lower bound of this thread's subarray on arr
-    unsigned int lo = tid * (N / T);
+    unsigned int lo = tid * (N / NT);
     // inclusive upper bound of this thread's subarray on arr
-    unsigned int hi = tid < T - 1 ? (tid + 1) * (N / T) - 1 : N - 1;
+    unsigned int hi = tid < NT - 1 ? (tid + 1) * (N / NT) - 1 : N - 1;
     // total number of elements in this thread's subarray on arr
     unsigned int n = hi - lo + 1;
 
@@ -85,7 +85,7 @@ static void* global_sort(void* targs) {
     local_sort(ys, 0, n - 1);
 
     int lid, gid, rid; // local id, group id, partner thread id
-    int t = T;         // threads per group
+    int t = NT;         // threads per group
     int p;                        // value of pivot element
     unsigned int local_arr_size;              // number of elements of subarray split according to p
     unsigned int local_arr_index;          // index shift of local subarray to reach split
@@ -202,7 +202,7 @@ static void* global_sort(void* targs) {
     // merge local subarrays back into arr
     // reservate space on arr
     ns[tid] = n;
-    if (T > 1) // else bar_group was never allocated
+    if (NT > 1) // else bar_group was never allocated
         pthread_barrier_wait(bar_group);
     // find location of local subarray on arr
     unsigned int n_prev = 0;
