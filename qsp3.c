@@ -5,31 +5,31 @@
 #include <sys/time.h>
 
 // Standard quicksort function
-static void local_sort(int* arr, const int lo, const int hi) {
-    if (lo < hi) {
-        const int mi = lo + ((hi - lo) >> 1);
-        const int pivot = arr[mi];
-        int tmp = arr[mi];
-        arr[mi] = arr[hi];
-        arr[hi] = tmp;
+static void local_sort(int* arr, const int begin, const int end) {
+    if (begin < end) {
+        const int middle = begin + ((end - begin) >> 1);
+        const int pivot = arr[middle];
+        int temp = arr[middle];
+        arr[middle] = arr[end];
+        arr[end] = temp;
         
-        int i = lo - 1;
-        for (int j = lo; j < hi; j++) {
+        int i = begin - 1;
+        for (int j = begin; j < end; j++) {
             if (arr[j] <= pivot) {
                 i++;
-                tmp = arr[i];
+                temp = arr[i];
                 arr[i] = arr[j];
-                arr[j] = tmp;
+                arr[j] = temp;
             }
         }
         
         i++;
-        tmp = arr[i];
-        arr[i] = arr[hi];
-        arr[hi] = tmp;
+        temp = arr[i];
+        arr[i] = arr[end];
+        arr[end] = temp;
         
-        local_sort(arr, lo, i - 1);
-        local_sort(arr, i + 1, hi);
+        local_sort(arr, begin, i - 1);
+        local_sort(arr, i + 1, end);
     }
 }
 
@@ -69,17 +69,17 @@ static void* global_sort(void* targs) {
 
     // inclusive lower bound of this thread's subarray on arr
     int chunk_size = N / NT;
-    unsigned int lo = threadid * chunk_size;
+    unsigned int begin = threadid * chunk_size;
     // inclusive upper bound of this thread's subarray on arr
-    unsigned int hi = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
+    unsigned int end = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
     // total number of elements in this thread's subarray on arr
-    chunk_size = hi - lo + 1;
+    chunk_size = end - begin + 1;
 
     // copy to local subarray otherwise reallocating won't work
     int local_size = chunk_size * sizeof(int);
     int* local_arr  = (int*) malloc(local_size);
     thread_local_arr[threadid] = local_arr;
-    memcpy(local_arr, arr + lo, local_size);
+    memcpy(local_arr, arr + begin, local_size);
     int* merged_arr;
     medians[threadid] = 0;
 
