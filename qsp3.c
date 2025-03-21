@@ -4,31 +4,30 @@
 #include <string.h>
 #include <sys/time.h>
 
-
-/**
- * Swap two integer values
- * as taken from the lecture
-*/
-static void swap(int* x, int* y) {
-    int tmp = *x;
-    *x = *y;
-    *y = tmp;
-}
-
-/**
- * Use classic quicksort on a subsection of an array
- * https://en.wikipedia.org/wiki/Quicksort
-*/
+// Standard quicksort function
 static void local_sort(int* arr, const int lo, const int hi) {
     if (lo < hi) {
         const int mi = lo + ((hi - lo) >> 1);
         const int p = arr[mi];
-        swap(arr + mi, arr + hi);
+        int tmp = arr[mi];
+        arr[mi] = arr[hi];
+        arr[hi] = tmp;
+        
         int i = lo - 1;
-        for (int j = lo; j < hi; j++)
-            if (arr[j] <= p)
-                swap(arr + ++i, arr + j);
-        swap(arr + ++i, arr + hi);
+        for (int j = lo; j < hi; j++) {
+            if (arr[j] <= p) {
+                i++;
+                tmp = arr[i];
+                arr[i] = arr[j];
+                arr[j] = tmp;
+            }
+        }
+        
+        i++;
+        tmp = arr[i];
+        arr[i] = arr[hi];
+        arr[hi] = tmp;
+        
         local_sort(arr, lo, i - 1);
         local_sort(arr, i + 1, hi);
     }
