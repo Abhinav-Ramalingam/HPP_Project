@@ -19,7 +19,7 @@ static void swap(int* x, int* y) {
  * Use classic quicksort on a subsection of an array
  * https://en.wikipedia.org/wiki/Quicksort
 */
-static void serial_qs(int* arr, const int lo, const int hi) {
+static void local_sort(int* arr, const int lo, const int hi) {
     if (lo < hi) {
         const int mi = lo + ((hi - lo) >> 1);
         const int p = arr[mi];
@@ -29,8 +29,8 @@ static void serial_qs(int* arr, const int lo, const int hi) {
             if (arr[j] <= p)
                 swap(arr + ++i, arr + j);
         swap(arr + ++i, arr + hi);
-        serial_qs(arr, lo, i - 1);
-        serial_qs(arr, i + 1, hi);
+        local_sort(arr, lo, i - 1);
+        local_sort(arr, i + 1, hi);
     }
 }
 
@@ -49,7 +49,7 @@ typedef struct args_t {
     static_args_t* static_args;
 } args_t;
 
-static void* thread_worker(void* targs) {
+static void* global_sort(void* targs) {
 
     // copy input
     const args_t*        args   = (args_t*) targs;
@@ -83,7 +83,7 @@ static void* thread_worker(void* targs) {
     medians[tid] = 0;
 
     // sort subarray locally
-    serial_qs(ys, 0, n - 1);
+    local_sort(ys, 0, n - 1);
 
     int lid, gid, rid; // local id, group id, partner thread id
     int t = T;         // threads per group
@@ -126,7 +126,7 @@ static void* thread_worker(void* targs) {
             } else if (S == 3) {
                 // strategy 3
                 // mean of center 2 medians in a group
-                serial_qs(medians, tid, tid + t - 1);
+                local_sort(medians, tid, tid + t - 1);
                 p = (medians[tid + (t >> 1) - 1] + medians[tid + (t >> 1)]) >> 1;
             } else {
                 // default to strategy 1
@@ -300,7 +300,7 @@ int main(int ac, char** av) {
         args_t* targs = (args_t*) malloc(sizeof(args_t));
         targs->tid = i;
         targs->static_args = &static_args;
-        pthread_create(threads + i, NULL, thread_worker, (void*) targs);
+        pthread_create(threads + i, NULL, global_sort, (void*) targs);
     }
     
     // join
