@@ -75,15 +75,14 @@ static void* global_sort(void* targs) {
     unsigned int n = hi - lo + 1;
 
     // copy to local subarray otherwise reallocating won't work
-    int* ys  = (int*) malloc(n * sizeof(int));
-    thread_local_arr[threadid] = ys;
-    memcpy(ys
-        , arr + lo, n * sizeof(int));
+    int* local_arr  = (int*) malloc(n * sizeof(int));
+    thread_local_arr[threadid] = local_arr;
+    memcpy(local_arr, arr + lo, n * sizeof(int));
     int* merged_arr;
     medians[threadid] = 0;
 
     // sort subarray locally
-    local_sort(ys, 0, n - 1);
+    local_sort(local_arr, 0, n - 1);
 
     int lid, groupid, exchangeid; // local id, group id, partner thread id
     int t = NT;         // threads per group
@@ -105,7 +104,7 @@ static void* global_sort(void* targs) {
         // update current median if elements exist
         // what is a good solution for n == 0?
         if (n > 0)
-            medians[threadid] = ys[n >> 1];
+            medians[threadid] = local_arr[n >> 1];
 
         // wait for threads to finish splitting in previous iteration
         // otherwise they might split by the pivot element of the next iteration
@@ -141,7 +140,7 @@ static void* global_sort(void* targs) {
         // find split point according to pivot element
         p = pivots[threadid];
         int s = 0;
-        while (s < n && ys[s] <= p) {
+        while (s < n && local_arr[s] <= p) {
             s++;
         }
 
@@ -154,7 +153,7 @@ static void* global_sort(void* targs) {
             exchangeid      = threadid + (t >> 1); // remote partner id
             local_arr_index   = 0;              // local shift to fit split point
             local_arr_size       = s;              // local size of lower part
-            exchange_arr[threadid] = ys + s;         // remote shift to fit split point
+            exchange_arr[threadid] = local_arr + s;         // remote shift to fit split point
             exchange_arr_sizes[threadid] = n - s;          // remote size of parnter's lower part
             pair_barrier_id = exchangeid;      // shift to find partner's barrier
         } else {
@@ -162,7 +161,7 @@ static void* global_sort(void* targs) {
             exchangeid      = threadid - (t >> 1);
             local_arr_index   = s;
             local_arr_size       = n - s;
-            exchange_arr[threadid] = ys;
+            exchange_arr[threadid] = local_arr;
             exchange_arr_sizes[threadid] = s;
             pair_barrier_id = threadid;
         }
@@ -175,14 +174,14 @@ static void* global_sort(void* targs) {
         
         int i = 0, j = 0, k = 0;
         while (j < local_arr_size && k < exchange_arr_sizes[exchangeid]) {
-            if ((ys + local_arr_index)[j] < exchange_arr[exchangeid][k]) {
-                merged_arr[i++] = (ys + local_arr_index)[j++];
+            if ((local_arr + local_arr_index)[j] < exchange_arr[exchangeid][k]) {
+                merged_arr[i++] = (local_arr + local_arr_index)[j++];
             } else {
                 merged_arr[i++] = exchange_arr[exchangeid][k++];
             }
         }
         while (j < local_arr_size) {
-            merged_arr[i++] = (ys + local_arr_index)[j++];
+            merged_arr[i++] = (local_arr + local_arr_index)[j++];
         }
         while (k < exchange_arr_sizes[exchangeid]) {
             merged_arr[i++] = exchange_arr[exchangeid][k++];
@@ -192,9 +191,9 @@ static void* global_sort(void* targs) {
         pthread_barrier_wait(bar_pair + pair_barrier_id);
 
         // iterate
-        free(ys);
-        ys              = merged_arr;          // swap local pointer
-        thread_local_arr[threadid]        = ys;          // update global pointer
+        free(local_arr);
+        local_arr              = merged_arr;          // swap local pointer
+        thread_local_arr[threadid]        = local_arr;          // update global pointer
         t               = t >> 1;      // half group size
         group_barrier_id += gpi;      // shift group barrier pointer
         gpi          = gpi << 1; // double number of groups
@@ -210,11 +209,11 @@ static void* global_sort(void* targs) {
     for (int i = 0; i < threadid; i++)
         n_prev += local_sizes[i];
     // copy
-    memcpy(arr + n_prev, ys, n * sizeof(int));
+    memcpy(arr + n_prev, local_arr, n * sizeof(int));
 
     // free thread local memory
     free(targs);
-    free(ys);
+    free(local_arr);
     return NULL;
 }
 
