@@ -85,46 +85,47 @@ static void* global_sort(void* targs) {
 
     // divide threads into groups until no smaller groups can be formed
     while (tpg > 1) {
-
-        
+        //Median Calculation
         if (chunk_size != 0)  medians[threadid] = local_arr[chunk_size >> 1];
 
+        //Pivot Calculation
         int pivot;             
+        
         localid = threadid % tpg;
         groupid = threadid / tpg;
-
-        // wait for threads to finish splitting in previous iteration
-        // otherwise they might split by the pivot element of the next iteration
-        // also their median might not be updated yet
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
         if (localid == 0) {
-            if (strat == 1) {
-                // strategy 1
-                // median of thread 0 of each group
-                pivot = medians[threadid];
-            } else if (strat == 2) {
-                // strategy 2
-                // mean of all medians in a group
-                long int sum = 0;
-                for (int i = threadid; i < threadid + tpg; i++)
-                    sum += medians[i];
-                pivot = sum / tpg;
-            } else if (strat == 3) {
-                // strategy 3
-                // mean of center 2 medians in a group
-                local_sort(medians, threadid, threadid + tpg - 1);
-                pivot = (medians[threadid + (tpg >> 1) - 1] + medians[threadid + (tpg >> 1)]) >> 1;
-            } else {
-                // default to strategy 1
-                pivot = medians[threadid];
+            switch(strat){
+                case 'a':
+                    //Pick Median of Processor-0 in Processor Group
+                    pivot = medians[threadid];
+                    break;
+                case 'b':
+                    //Select the mean of all medians in respective processor set
+                    int sum = 0;
+                    for(int i = 0; i < tpg; i++){
+                        sum += medians[threadid + i];
+                    }
+                    pivot = sum / tpg;
+                    break;
+                case 'c':
+                    //Sort the medians and select the mean value of the two middlemost medians in each processor set
+                    local_sort(medians, threadid, threadid + tpg - 1);
+                    pivot = (medians[threadid + (tpg >> 1) - 1] + medians[threadid + (tpg >> 1)]) >> 1;
+
+                    break;
+                default:
+                    pivot = medians[threadid];
+                    break;
             }
-            // distribute pivot element within group
-            for (int i = threadid; i < threadid + tpg; i++)
-                    pivots[i] = pivot;
+            //Thread with local-id Zero will always aggregate and broadcast
+            for (int i = 0; i < tpg; i ++){
+                pivots[threadid + i] = pivot;
+            }
         }
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
-        // find split point according to pivot element
+        //Splitpoint calculation
         pivot = pivots[threadid];
         int split = 0;
         while (split < chunk_size && local_arr[split] <= pivot) {
