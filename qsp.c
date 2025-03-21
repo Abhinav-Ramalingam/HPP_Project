@@ -1,49 +1,58 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+#include <stdio.h>
 #include <pthread.h>
-#include <omp.h>
 #include <string.h>
+#include <omp.h>
 
-void quick_sort(int *, int, int);
-void* thread_quick_sort(void *arg);
-void* global_sort(void *arg);
+typedef struct thread_const_data_t {
+    int   N;
+    int NT;
+    char  strat;
+    int **thread_local_arr, **exchange_arr;
+    int *arr, *exchange_arr_sizes, *pivots, *local_sizes, *medians;
+    pthread_barrier_t *bar_pair, *bar_group;
+} thread_const_data_t;
 
-// Unified structure to hold data for each thread
 typedef struct {
-    int *arr;
-    int begin;
-    int end;
-    int myid;
-    int size;
-    int chunk_size;
-    int num_threads;
-    int N;
-    int *pivots;
-} thread_data;
+    int threadid;
+    thread_const_data_t* t_const_args;
+} thread_data_t;
 
-pthread_barrier_t barrier;
+void* global_sort(void *);
+void local_sort(int *, int, int);
+double get_time();
 
-int main(int ac, char* av[]) {
-    if (ac != 5) {
-        printf("Usage: ./%s N input_file output_file N_Threads\n", av[0]);
+int main(int ac, char** av) {
+    if (ac != 6) {
+        printf("Usage: ./%s N input output NT S\n", av[0]);
+        printf("N - Number of Elements to Sort\n");
+        printf("input - Input Numbers Dataset Filepath (generate with gen_data.c)\n");
+        printf("output - Filepath to store the sorted elements\n");
+        printf("NT - Number of Processors to Utilise\n");
+        printf("strat - Strategy to Select the pivot element:\n");
+        printf("\t\'a\' - Pick Median of Processor-0 in Processor Group\n");
+        printf("\t\'b\' - Select the mean of all medians in respective processor set\n");
+        printf("\t\'c\' - Sort the medians and select the mean value of the two middlemost medians in each processor set\n");
+
         return 1;
     }
     int N = atoi(av[1]);
-    char *input_file = av[2];
-    char *output_file = av[3];
-    int num_threads = atoi(av[4]);
+    char *inputfile = av[2];
+    char *outputfile = av[3];
+    int NT = atoi(av[4]);
+    char strat = av[5][0];
 
-    double start = omp_get_wtime(), stop;
+    double start = get_time(), stop;
 
-    // Phase 1: Read input from file
+    /**** PHASE 1: READ INPUT FROM FILE ****/
+
     int *arr = (int *)calloc(N, sizeof(int));
     if (arr == NULL) {
         perror("Memory allocation failed");
         return 1;
     }
 
-    FILE *input_fp = fopen(input_file, "r");
+    FILE *input_fp = fopen(inputfile, "r");
     if (input_fp == NULL) {
         perror("Failed to open input file");
         free(arr);
@@ -59,52 +68,83 @@ int main(int ac, char* av[]) {
     }
     fclose(input_fp);
 
-    stop = omp_get_wtime();
+    stop = get_time();
     printf("Input time(s): %lf\n", stop - start);
     start = stop;
 
-    // Phase 2: Sorting the data locally within threads
-    pthread_t threads[num_threads];
-    thread_data tdata[num_threads];
-    
-    int chunk_size = N / num_threads;
-    int pivots[num_threads];
-    
-    for (int t = 0; t < num_threads; t++) {
-        tdata[t].arr = arr;
-        tdata[t].begin = t * chunk_size;
-        tdata[t].end = (t == num_threads - 1) ? N - 1 : (t + 1) * chunk_size - 1;
-        printf("interval == %d!!\n",tdata[t].end - tdata[t].begin);
-        tdata[t].pivots = pivots;
-        tdata[t].myid = t;
-        tdata[t].size = num_threads;
-        tdata[t].num_threads = num_threads;
-        tdata[t].chunk_size = chunk_size;
-        tdata[t].N = N;
-        pthread_create(&threads[t], NULL, thread_quick_sort, (void*)&tdata[t]);
+    /**** PHASE 2: SORT INPUT ****/
+    //Create Barriers
+    int t = 0;
+    pthread_barrier_t *bar_pair, *bar_group; 
+    bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
+    for (t = 0; t < NT; t++) {
+        pthread_barrier_init(bar_pair + t, NULL, 2);
+    }
+    int bar_group_count = 0;
+    for (t = 1; t < NT; t = t << 1)
+        bar_group_count += t;  
+    bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
+    int loop, bpg_index = 0;
+    for (t = 1; t < NT; t = t << 1) {
+        for (loop = 0; loop < t; loop++) {
+            pthread_barrier_init(bar_group + bpg_index, NULL, NT / t);
+            bpg_index++;
+        }
     }
 
-    for (int t = 0; t < num_threads; t++) {
-        pthread_join(threads[t], NULL);
-    }
+    //Create Shared Memory
+    int NT_int_arr = sizeof(int*) * NT;
+    int NT_int = sizeof(int) * NT;
+    int ** thread_local_arr = (int **) (malloc(NT_int_arr));
+    int * local_sizes = (int *) (malloc(NT_int));
+    int ** exchange_arr = (int **) (malloc(NT_int_arr));
+    int * exchange_arr_sizes = (int *) (malloc(NT_int));
+    int * pivots = (int *) (malloc(NT_int));
+    int * medians = (int *) (malloc(NT_int));
 
-    pthread_barrier_init(&barrier, NULL, num_threads);
-    //Phase 3: Sorting the data globally across threads
-    for (int t = 0; t < num_threads; t++) {
-        pthread_create(&threads[t], NULL, global_sort, (void*)&tdata[t]);
+    //Create Threads
+    pthread_t threads[NT];
+    thread_const_data_t t_const_args = {
+        N, NT, strat, 
+        thread_local_arr, exchange_arr, 
+        arr, 
+        exchange_arr_sizes, pivots, local_sizes, medians, 
+        bar_pair, bar_group
+    };
+    for (t = 0; t < NT; t++) {
+        thread_data_t* t_args = (thread_data_t*) malloc(sizeof(thread_data_t));
+        t_args->threadid = t;
+        t_args->t_const_args = &t_const_args;
+        pthread_create(threads + t, NULL, global_sort, (void*) t_args);
     }
     
-    for (int t = 0; t < num_threads; t++) {
-        pthread_join(threads[t], NULL);
-    }
-    pthread_barrier_destroy(&barrier);
+    //Join Threads
+    for (int i = 0; i < NT; i++)
+        pthread_join(threads[i], NULL);
+    
+    //Free Shared Memory
+    free(thread_local_arr); free(local_sizes);
+    free(exchange_arr); free(exchange_arr_sizes);
+    free(pivots); free(medians);
 
-    stop = omp_get_wtime();
+    //Destroy Barriers
+    for(t = 0; t < NT; t++) {
+        pthread_barrier_destroy(bar_pair + t);
+    }
+    for(t = 0; t < bar_group_count; t++) {
+        pthread_barrier_destroy(bar_group + t);
+    }
+
+    //Free Barriers
+    free(bar_group);
+    free(bar_pair);
+    
+    stop = get_time();
     printf("Sorting time(s): %lf\n", stop - start);
     start = stop;
 
-    // Phase 4: Write sorted numbers to output file
-    FILE *output_fp = fopen(output_file, "w");
+    /**** PHASE 3: WRITE OUTPUT TO FILE ****/
+    FILE *output_fp = fopen(outputfile, "w");
     if (output_fp == NULL) {
         perror("Failed to open output file");
         free(arr);
@@ -116,63 +156,182 @@ int main(int ac, char* av[]) {
     }
     fprintf(output_fp, "\n");
     fclose(output_fp);
-
+    
     free(arr);
 
-    stop = omp_get_wtime();
+    stop = get_time();
     printf("Output time(s): %lf\n", stop - start);
-
+    
     return 0;
 }
 
-// Function for thread to run quicksort on a portion of the array
-void* thread_quick_sort(void *arg) {
-    thread_data *data = (thread_data*)arg;
-    quick_sort(data->arr, data->begin, data->end);
-    return NULL;
-}
+void* global_sort(void* t_args) {
+    const thread_data_t* args   = (thread_data_t*) t_args;
 
-void* global_sort(void *arg) {
-    thread_data *tdata = (thread_data*)arg;
-    int myid = tdata->myid;
-    int size = tdata->size;
-    int N = tdata->N;
-    int *arr = tdata->arr;
-    int chunk_size = tdata->chunk_size;
-    int num_threads = tdata->num_threads;
-    int *pivots = tdata->pivots;
-    int global_begin = tdata->begin;
-    int global_end = tdata->end;
+    //Copy arguments to local variables
+    const int threadid    = args->threadid;      
+    const thread_const_data_t* s_args = args->t_const_args;
+    const int   N      = s_args->N;     
+    const int NT      = s_args->NT;       
+    const char  strat      = s_args->strat;      
+    int*  arr   = s_args->arr;  
 
-    if(size == 1) return NULL;
+    int** thread_local_arr  = s_args->thread_local_arr;
+    int*  local_sizes   = s_args->local_sizes; 
 
-    int localid = myid % size;
-    int group = myid / size;
+    int** exchange_arr  = s_args->thread_local_arr; 
+    int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; 
+    
+    int*  pivots   = s_args->pivots;  
+    int*  medians   = s_args->medians;
 
-    pthread_barrier_wait(&barrier);
-    if (localid == 0) {
-        int pivot_index = (global_begin + global_end) / 2;
-        pivots[group] = arr[pivot_index];
+    pthread_barrier_t* bar_pair = s_args->bar_pair; 
+    pthread_barrier_t* bar_group = s_args->bar_group;
+
+    int chunk_size = N / NT;
+    int begin = threadid * chunk_size;
+    int end = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
+    chunk_size = end - begin + 1; //Not all thread's actual chunk_size is N / NT
+
+    //Create a local array of chunk_size in this thread executing the global_sort
+    int local_size = chunk_size * sizeof(int);
+    int* local_arr  = (int*) malloc(local_size);
+    thread_local_arr[threadid] = local_arr;
+    memcpy(local_arr, arr + begin, local_size);
+
+    //local sort on LOCAL array
+    local_sort(local_arr, 0, chunk_size - 1);
+
+    int localid, groupid, exchangeid; //Identifier of thread within a group and, group it belongs to, identifier of partner
+    int tpg = NT, gpi = 1; //threads per group and groups per iteration
+    int group_barrier_id = 0, pair_barrier_id = 0; //Idenfier of which barrier is being waited on
+
+    medians[threadid] = 0;
+    int* merged_arr;
+      
+    while (tpg > 1) {
+        //Median Calculation
+        if (chunk_size != 0)  medians[threadid] = local_arr[chunk_size >> 1];
+
+        //Pivot Calculation
+        int pivot;             
+        
+        localid = threadid % tpg;
+        groupid = threadid / tpg;
+        pthread_barrier_wait(bar_group + group_barrier_id + groupid);
+        if (localid == 0) {
+            switch(strat){
+                case 'a':
+                    //Pick Median of Processor-0 in Processor Group
+                    pivot = medians[threadid];
+                    break;
+                case 'b':
+                    //Select the mean of all medians in respective processor set
+                    int sum = 0;
+                    for(int i = 0; i < tpg; i++){
+                        sum += medians[threadid + i];
+                    }
+                    pivot = sum / tpg;
+                    break;
+                case 'c':
+                    //Sort the medians and select the mean value of the two middlemost medians in each processor set
+                    local_sort(medians, threadid, threadid + tpg - 1);
+                    pivot = (medians[threadid + (tpg >> 1) - 1] + medians[threadid + (tpg >> 1)]) >> 1;
+
+                    break;
+                default:
+                    pivot = medians[threadid];
+                    break;
+            }
+            //Thread with local-id Zero will always aggregate and broadcast
+            for (int i = 0; i < tpg; i ++){
+                pivots[threadid + i] = pivot;
+            }
+        }
+        pthread_barrier_wait(bar_group + group_barrier_id + groupid);
+
+        //Splitpoint calculation
+        pivot = pivots[threadid];
+        int split = 0;
+        while (split < chunk_size && local_arr[split] <= pivot) {
+            split++;
+        }
+
+        pthread_barrier_wait(bar_group + group_barrier_id + groupid);
+
+        int local_arr_size, local_arr_index;          
+        if (localid < tpg >> 1) {
+            //Threads in the 'lower half' would exchange elements greater than the pivot with their exchange partner
+            exchangeid = threadid + (tpg >> 1);
+            local_arr_index = 0; local_arr_size = split;           
+            exchange_arr[threadid] = local_arr + split; exchange_arr_sizes[threadid] = chunk_size - split;       
+            pair_barrier_id = exchangeid;      
+        } else {
+            //Threads in the 'upper half' would exchange elements less than the pivot with their exchange partner
+            exchangeid  = threadid - (tpg >> 1);
+            local_arr_index = split; local_arr_size = chunk_size - split;
+            exchange_arr[threadid] = local_arr;
+            exchange_arr_sizes[threadid] = split;
+            pair_barrier_id = threadid; //Here, we are always using the barrier of the upper half thread as convention
+        }
+
+        pthread_barrier_wait(bar_pair + pair_barrier_id);
+
+        //Calculating the new chunk_size after exchange
+        chunk_size = local_arr_size + exchange_arr_sizes[exchangeid];
+        merged_arr = (int*) malloc(chunk_size * sizeof(int));
+        
+        int i = 0, j = 0, k = 0;
+        while (j < local_arr_size && k < exchange_arr_sizes[exchangeid]) {
+            if ((local_arr + local_arr_index)[j] < exchange_arr[exchangeid][k]) {
+                merged_arr[i++] = (local_arr + local_arr_index)[j++];
+            } else {
+                merged_arr[i++] = exchange_arr[exchangeid][k++];
+            }
+        }
+        while (j < local_arr_size) {
+            merged_arr[i++] = (local_arr + local_arr_index)[j++];
+        }
+        while (k < exchange_arr_sizes[exchangeid]) {
+            merged_arr[i++] = exchange_arr[exchangeid][k++];
+        }
+
+        
+        pthread_barrier_wait(bar_pair + pair_barrier_id);
+
+        // iterate
+        free(local_arr);
+        local_arr = merged_arr;           
+        thread_local_arr[threadid] = local_arr;      
+          
+        group_barrier_id += gpi; //Move on to using the next set of barriers for groups of threads
+        tpg = tpg >> 1; //Divide the number of threads/group by 2
+        gpi = gpi << 1; //Multiply the number of groups/iterations by 2
     }
 
-    pthread_barrier_wait(&barrier);
+    //Final chunk_size of the local_arr after all the swaps
+    local_sizes[threadid] = chunk_size;
 
-    int pivot = pivots[group];
-
-    int loop = global_begin;
-    while(loop <= global_end && arr[loop] < pivot){
-        loop++;
+    if (NT != 1) {
+        //More than one thread executed
+        pthread_barrier_wait(bar_group);
     }
-    printf("Start = %d, End = %d\nThreadid is %d=%d:%d = pivot %d @ %d\n\n", global_begin, global_end, myid, group, localid, pivots[group], loop);
+        
+    //Find the global location of the sorted local array = cumulative sizes of local arrays before current thread's local array
+    int global_loc = 0;
+    for (int i = 0; i < threadid; i++)
+        global_loc += local_sizes[i];
+    
+    memcpy(arr + global_loc, local_arr, chunk_size * sizeof(int));
 
-    thread_data next_partition = {arr, global_begin, global_end, myid, size / 2, chunk_size, num_threads, N, pivots};
-    global_sort(&next_partition);
-
+    // free thread local memory
+    free(t_args);
+    free(local_arr);
     return NULL;
 }
 
 // Standard quicksort function
-void quick_sort(int *arr, int begin, int end) {
+void local_sort(int *arr, int begin, int end) {
     if (begin >= end) return;
 
     int pivot = arr[end]; 
@@ -191,6 +350,13 @@ void quick_sort(int *arr, int begin, int end) {
     arr[i + 1] = arr[end];
     arr[end] = temp;
 
-    quick_sort(arr, begin, i);
-    quick_sort(arr, i + 2, end);
+    local_sort(arr, begin, i);
+    local_sort(arr, i + 2, end);
+}
+
+
+double get_time() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
 }
