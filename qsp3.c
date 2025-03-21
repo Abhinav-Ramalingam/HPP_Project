@@ -107,16 +107,16 @@ static int split(const int* arr, const unsigned int n, const int p) {
 }
 
 /**
- * Merge two arrays ys and zs on arr
+ * Merge two arrays ys and merged_arr on arr
  * as taken from the lecture
 */
-static void merge(int* arr, const int* ys, const int* zs, const unsigned int y_n, const unsigned int z_n) {
+static void merge(int* arr, const int* ys, const int* merged_arr, const unsigned int y_n, const unsigned int z_n) {
     int i = 0, j = 0, k = 0;
     while (j < y_n && k < z_n)
-        if (ys[j] < zs[k])  arr[i++] = ys[j++];
-        else                arr[i++] = zs[k++];
+        if (ys[j] < merged_arr[k])  arr[i++] = ys[j++];
+        else                arr[i++] = merged_arr[k++];
     for (; j < y_n; j++)    arr[i++] = ys[j];
-    for (; k < z_n; k++)    arr[i++] = zs[k];
+    for (; k < z_n; k++)    arr[i++] = merged_arr[k];
 }
 
 /**
@@ -127,9 +127,9 @@ typedef struct static_args_t {
     unsigned int   N;
     unsigned short T;
     unsigned char  S;
-    int **yss, **rss;
-    int *arr, *rns, *ps, *ns, *ms;
-    pthread_barrier_t *bs_local, *bs_group;
+    int **thread_local_arr, **exchange_arr;
+    int *arr, *exchange_arr_sizes, *ps, *ns, *ms;
+    pthread_barrier_t *bar_pair, *bar_group;
 } static_args_t;
 
 typedef struct args_t {
@@ -147,14 +147,14 @@ static void* thread_worker(void* targs) {
     const unsigned short T      = s_args->T;         // num threads
     const unsigned char  S      = s_args->S;         // pivot strategy
     int*  arr   = s_args->arr;  // global input array
-    int** yss  = s_args->yss; // local subarrays
-    int** rss  = s_args->yss; // local subarrays shifted to pivot index
-    int*  rns  = s_args->rns; // size from/to pivot index in local subarrays
+    int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
+    int** exchange_arr  = s_args->thread_local_arr; // local subarrays shifted to pivot index
+    int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; // size from/to pivot index in local subarrays
     int*  ps   = s_args->ps;  // pivot elements per local subarray
     int*  ns   = s_args->ns;  // size of local subarrays
     int*  ms   = s_args->ns;  // median elements per local subarray
-    pthread_barrier_t* bs_local = s_args->bs_local; // pairs barriers
-    pthread_barrier_t* bs_group = s_args->bs_group; // group barriers
+    pthread_barrier_t* bar_pair = s_args->bar_pair; // pairs barriers
+    pthread_barrier_t* bar_group = s_args->bar_group; // group barriers
 
     // inclusive lower bound of this thread's subarray on arr
     unsigned int lo = tid * (N / T);
@@ -165,9 +165,9 @@ static void* thread_worker(void* targs) {
 
     // copy to local subarray otherwise reallocating won't work
     int* ys  = (int*) malloc(n * sizeof(int));
-    yss[tid] = ys;
+    thread_local_arr[tid] = ys;
     memcpy(ys, arr + lo, n * sizeof(int));
-    int* zs;
+    int* merged_arr;
     ms[tid] = 0;
 
     // sort subarray locally
@@ -177,12 +177,12 @@ static void* thread_worker(void* targs) {
     unsigned short t = T;         // threads per group
     int p;                        // value of pivot element
     unsigned int s;               // index of pivot element + 1
-    unsigned int ln;              // number of elements of subarray split according to p
-    unsigned int lshift;          // index shift of local subarray to reach split
+    unsigned int local_arr_size;              // number of elements of subarray split according to p
+    unsigned int local_arr_index;          // index shift of local subarray to reach split
 
     // for finding the correct barriers in the collective arrays
-    unsigned short shift_bs_group = 0;
-    unsigned short shift_bs_local = 0;
+    unsigned short group_barrier_id = 0;
+    unsigned short pair_barrier_id = 0;
     unsigned short num_gs         = 1;
 
     // divide threads into groups until no smaller groups can be formed
@@ -199,7 +199,7 @@ static void* thread_worker(void* targs) {
         // wait for threads to finish splitting in previous iteration
         // otherwise they might split by the pivot element of the next iteration
         // also their median might not be updated yet
-        pthread_barrier_wait(bs_group + shift_bs_group + gid);
+        pthread_barrier_wait(bar_group + group_barrier_id + gid);
         if (lid == 0) {
             if (S == 1) {
                 // strategy 1
@@ -225,56 +225,56 @@ static void* thread_worker(void* targs) {
             for (unsigned short i = tid; i < tid + t; i++)
                     ps[i] = p;
         }
-        pthread_barrier_wait(bs_group + shift_bs_group + gid);
+        pthread_barrier_wait(bar_group + group_barrier_id + gid);
 
         // find split point according to pivot element
         p = ps[tid];
         s = split(ys, n, p);
 
-        pthread_barrier_wait(bs_group + shift_bs_group + gid);
+        pthread_barrier_wait(bar_group + group_barrier_id + gid);
 
 
         // send data
         if (lid < (t >> 1)) {
             // send upper part
             rid      = tid + (t >> 1); // remote partner id
-            lshift   = 0;              // local shift to fit split point
-            ln       = s;              // local size of lower part
-            rss[tid] = ys + s;         // remote shift to fit split point
-            rns[tid] = n - s;          // remote size of parnter's lower part
-            shift_bs_local = rid;      // shift to find partner's barrier
+            local_arr_index   = 0;              // local shift to fit split point
+            local_arr_size       = s;              // local size of lower part
+            exchange_arr[tid] = ys + s;         // remote shift to fit split point
+            exchange_arr_sizes[tid] = n - s;          // remote size of parnter's lower part
+            pair_barrier_id = rid;      // shift to find partner's barrier
         } else {
             // send lower part
             rid      = tid - (t >> 1);
-            lshift   = s;
-            ln       = n - s;
-            rss[tid] = ys;
-            rns[tid] = s;
-            shift_bs_local = tid;
+            local_arr_index   = s;
+            local_arr_size       = n - s;
+            exchange_arr[tid] = ys;
+            exchange_arr_sizes[tid] = s;
+            pair_barrier_id = tid;
         }
         // use barrier of the upper partner
-        pthread_barrier_wait(bs_local + shift_bs_local);
+        pthread_barrier_wait(bar_pair + pair_barrier_id);
 
         // merge local and remote elements in place of new local subarray
-        n = ln + rns[rid];
-        zs = (int*) malloc(n * sizeof(int));
-        merge(zs, ys + lshift, rss[rid], ln, rns[rid]);
-        pthread_barrier_wait(bs_local + shift_bs_local);
+        n = local_arr_size + exchange_arr_sizes[rid];
+        merged_arr = (int*) malloc(n * sizeof(int));
+        merge(merged_arr, ys + local_arr_index, exchange_arr[rid], local_arr_size, exchange_arr_sizes[rid]);
+        pthread_barrier_wait(bar_pair + pair_barrier_id);
 
         // iterate
         free(ys);
-        ys              = zs;          // swap local pointer
-        yss[tid]        = ys;          // update global pointer
+        ys              = merged_arr;          // swap local pointer
+        thread_local_arr[tid]        = ys;          // update global pointer
         t               = t >> 1;      // half group size
-        shift_bs_group += num_gs;      // shift group barrier pointer
+        group_barrier_id += num_gs;      // shift group barrier pointer
         num_gs          = num_gs << 1; // double number of groups
     }
 
     // merge local subarrays back into arr
     // reservate space on arr
     ns[tid] = n;
-    if (T > 1) // else bs_group was never allocated
-        pthread_barrier_wait(bs_group);
+    if (T > 1) // else bar_group was never allocated
+        pthread_barrier_wait(bar_group);
     // find location of local subarray on arr
     unsigned int n_prev = 0;
     for (unsigned short i = 0; i < tid; i++)
@@ -337,31 +337,31 @@ int main(int ac, char** av) {
 
 
     /**** PHASE 2: SORT INPUT ****/
-    int** yss = (int**) malloc(NT * sizeof(int*)); // local subarrays
-    int** rss = (int**) malloc(NT * sizeof(int*)); // remote subarrays
-    int*  rns = (int*)  malloc(NT * sizeof(int )); // number of elements 'sent'
+    int** thread_local_arr = (int**) malloc(NT * sizeof(int*)); // local subarrays
+    int** exchange_arr = (int**) malloc(NT * sizeof(int*)); // remote subarrays
+    int*  exchange_arr_sizes = (int*)  malloc(NT * sizeof(int )); // number of elements 'sent'
     int*  ps  = (int*)  malloc(NT * sizeof(int )); // pivot element for each thread
     int*  ns  = (int*)  malloc(NT * sizeof(int )); // number of elements in each thread in arr
     int*  ms  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
     
-    pthread_barrier_t* bs_local = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
+    pthread_barrier_t* bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
     for (unsigned short i = 0; i < NT; i++)
-        pthread_barrier_init(bs_local + i, NULL, 2);
+        pthread_barrier_init(bar_pair + i, NULL, 2);
     
     // let T = 16, then
-    // bs_group = [ 0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
+    // bar_group = [ 0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
     // b_counts = [16, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2]
     // num_bs_g =  1  +  2  +     4     +          8
-    unsigned short num_bs_group = 0;
+    unsigned short bar_group_count = 0;
     for (unsigned short j = 1; j < NT; j = j << 1)
-        num_bs_group += j;  
-    pthread_barrier_t* bs_group = (pthread_barrier_t*) malloc(num_bs_group * sizeof(pthread_barrier_t));
+        bar_group_count += j;  
+    pthread_barrier_t* bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
     unsigned short l = 0;
     for (unsigned short j = 1; j < NT; j = j << 1)
         for (unsigned short k = 0; k < j; k++)
-            pthread_barrier_init(bs_group + l++, NULL, NT / j);
+            pthread_barrier_init(bar_group + l++, NULL, NT / j);
     
-    static_args_t static_args = {N, NT, strat, yss, rss, arr, rns, ps, ns, ms, bs_local, bs_group};
+    static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, ps, ns, ms, bar_pair, bar_group};
     pthread_t* threads = (pthread_t*) malloc(NT * sizeof(pthread_t));
     
     // fork
@@ -378,19 +378,19 @@ int main(int ac, char** av) {
         pthread_join(threads[i], NULL);
     
     // free shared memory
-    free(yss);
-    free(rss);
-    free(rns);
+    free(thread_local_arr);
+    free(exchange_arr);
+    free(exchange_arr_sizes);
     free(ps);
     free(ns);
     free(ms);
     free(threads);
     for (unsigned short i = 0; i < NT; i++)
-        pthread_barrier_destroy(bs_local + i);
-    for (unsigned short i = 0; i < num_bs_group; i++)
-        pthread_barrier_destroy(bs_group + i);
-    free(bs_local);
-    free(bs_group);
+        pthread_barrier_destroy(bar_pair + i);
+    for (unsigned short i = 0; i < bar_group_count; i++)
+        pthread_barrier_destroy(bar_group + i);
+    free(bar_pair);
+    free(bar_group);
     
 
     /**** PHASE 3: WRITE OUTPUT TO FILE ****/
