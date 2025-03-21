@@ -135,27 +135,24 @@ static void* global_sort(void* targs) {
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
         int local_arr_size, local_arr_index;          
-        if (localid < (tpg >> 1)) {
-            // send upper part
-            exchangeid      = threadid + (tpg >> 1); // remote partner id
-            local_arr_index   = 0;              // local shift to fit split point
-            local_arr_size       = split;              // local size of lower part
-            exchange_arr[threadid] = local_arr + split;         // remote shift to fit split point
-            exchange_arr_sizes[threadid] = chunk_size - split;          // remote size of parnter's lower part
-            pair_barrier_id = exchangeid;      // shift to find partner's barrier
+        if (localid < tpg >> 1) {
+            //Threads in the 'lower half' would exchange elements greater than the pivot with their exchange partner
+            exchangeid = threadid + (tpg >> 1);
+            local_arr_index = 0; local_arr_size = split;           
+            exchange_arr[threadid] = local_arr + split; exchange_arr_sizes[threadid] = chunk_size - split;       
+            pair_barrier_id = exchangeid;      
         } else {
-            // send lower part
-            exchangeid      = threadid - (tpg >> 1);
-            local_arr_index   = split;
-            local_arr_size       = chunk_size - split;
+            //Threads in the 'upper half' would exchange elements less than the pivot with their exchange partner
+            exchangeid  = threadid - (tpg >> 1);
+            local_arr_index = split; local_arr_size = chunk_size - split;
             exchange_arr[threadid] = local_arr;
             exchange_arr_sizes[threadid] = split;
-            pair_barrier_id = threadid;
+            pair_barrier_id = threadid; //Here, we are always using the barrier of the upper half thread as convention
         }
-        // use barrier of the upper partner
+
         pthread_barrier_wait(bar_pair + pair_barrier_id);
 
-        // merge local and remote elements in place of new local subarray
+        //Calculating the new chunk_size after exchange
         chunk_size = local_arr_size + exchange_arr_sizes[exchangeid];
         merged_arr = (int*) malloc(chunk_size * sizeof(int));
         
