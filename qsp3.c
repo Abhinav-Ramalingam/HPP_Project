@@ -85,7 +85,6 @@ static void* global_sort(void* targs) {
     local_sort(local_arr, 0, n - 1);
 
     int lid, groupid, exchangeid; // local id, group id, partner thread id
-    int t = NT;         // threads per group
     int pivot;                        // value of pivot element
     unsigned int local_arr_size;              // number of elements of subarray split according to p
     unsigned int local_arr_index;          // index shift of local subarray to reach split
@@ -93,13 +92,13 @@ static void* global_sort(void* targs) {
     // for finding the correct barriers in the collective arrays
     int group_barrier_id = 0;
     int pair_barrier_id = 0;
-    int gpi         = 1;
+    int tpg = NT, gpi = 1; //threads per group and groups per iteration
 
     // divide threads into groups until no smaller groups can be formed
-    while (t > 1) {
+    while (tpg > 1) {
 
-        lid = threadid % t;
-        groupid = threadid / t;
+        lid = threadid % tpg;
+        groupid = threadid / tpg;
 
         // update current median if elements exist
         // what is a good solution for n == 0?
@@ -119,20 +118,20 @@ static void* global_sort(void* targs) {
                 // strategy 2
                 // mean of all medians in a group
                 long int mm = 0;
-                for (int i = threadid; i < threadid + t; i++)
+                for (int i = threadid; i < threadid + tpg; i++)
                     mm += medians[i];
-                pivot = mm / t;
+                pivot = mm / tpg;
             } else if (S == 3) {
                 // strategy 3
                 // mean of center 2 medians in a group
-                local_sort(medians, threadid, threadid + t - 1);
-                pivot = (medians[threadid + (t >> 1) - 1] + medians[threadid + (t >> 1)]) >> 1;
+                local_sort(medians, threadid, threadid + tpg - 1);
+                pivot = (medians[threadid + (tpg >> 1) - 1] + medians[threadid + (tpg >> 1)]) >> 1;
             } else {
                 // default to strategy 1
                 pivot = medians[threadid];
             }
             // distribute pivot element within group
-            for (int i = threadid; i < threadid + t; i++)
+            for (int i = threadid; i < threadid + tpg; i++)
                     pivots[i] = pivot;
         }
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
@@ -148,9 +147,9 @@ static void* global_sort(void* targs) {
 
 
         // send data
-        if (lid < (t >> 1)) {
+        if (lid < (tpg >> 1)) {
             // send upper part
-            exchangeid      = threadid + (t >> 1); // remote partner id
+            exchangeid      = threadid + (tpg >> 1); // remote partner id
             local_arr_index   = 0;              // local shift to fit split point
             local_arr_size       = s;              // local size of lower part
             exchange_arr[threadid] = local_arr + s;         // remote shift to fit split point
@@ -158,7 +157,7 @@ static void* global_sort(void* targs) {
             pair_barrier_id = exchangeid;      // shift to find partner's barrier
         } else {
             // send lower part
-            exchangeid      = threadid - (t >> 1);
+            exchangeid      = threadid - (tpg >> 1);
             local_arr_index   = s;
             local_arr_size       = n - s;
             exchange_arr[threadid] = local_arr;
@@ -194,9 +193,9 @@ static void* global_sort(void* targs) {
         free(local_arr);
         local_arr              = merged_arr;          // swap local pointer
         thread_local_arr[threadid]        = local_arr;          // update global pointer
-        t               = t >> 1;      // half group size
         group_barrier_id += gpi;      // shift group barrier pointer
-        gpi          = gpi << 1; // double number of groups
+        tpg = tpg >> 1; //half the threads/group
+        gpi = gpi << 1; // double the groups/iteration
     }
 
     // merge local subarrays back into arr
