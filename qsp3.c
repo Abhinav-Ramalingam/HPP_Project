@@ -138,9 +138,9 @@ static void* global_sort(void* targs) {
 
         // find split point according to pivot element
         pivot = pivots[threadid];
-        int s = 0;
-        while (s < n && local_arr[s] <= pivot) {
-            s++;
+        int split = 0;
+        while (split < n && local_arr[split] <= pivot) {
+            split++;
         }
 
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
@@ -151,17 +151,17 @@ static void* global_sort(void* targs) {
             // send upper part
             exchangeid      = threadid + (tpg >> 1); // remote partner id
             local_arr_index   = 0;              // local shift to fit split point
-            local_arr_size       = s;              // local size of lower part
-            exchange_arr[threadid] = local_arr + s;         // remote shift to fit split point
-            exchange_arr_sizes[threadid] = n - s;          // remote size of parnter's lower part
+            local_arr_size       = split;              // local size of lower part
+            exchange_arr[threadid] = local_arr + split;         // remote shift to fit split point
+            exchange_arr_sizes[threadid] = n - split;          // remote size of parnter's lower part
             pair_barrier_id = exchangeid;      // shift to find partner's barrier
         } else {
             // send lower part
             exchangeid      = threadid - (tpg >> 1);
-            local_arr_index   = s;
-            local_arr_size       = n - s;
+            local_arr_index   = split;
+            local_arr_size       = n - split;
             exchange_arr[threadid] = local_arr;
-            exchange_arr_sizes[threadid] = s;
+            exchange_arr_sizes[threadid] = split;
             pair_barrier_id = threadid;
         }
         // use barrier of the upper partner
