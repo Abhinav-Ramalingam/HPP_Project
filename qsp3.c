@@ -72,40 +72,45 @@ int main(int ac, char** av) {
     start = stop;
 
     /**** PHASE 2: SORT INPUT ****/
-    int** thread_local_arr = (int**) malloc(NT * sizeof(int*)); // local subarrays
-    int** exchange_arr = (int**) malloc(NT * sizeof(int*)); // remote subarrays
-    int*  exchange_arr_sizes = (int*)  malloc(NT * sizeof(int )); // number of elements 'sent'
-    int*  pivots  = (int*)  malloc(NT * sizeof(int )); // pivot element for each thread
-    int*  local_sizes  = (int*)  malloc(NT * sizeof(int )); // number of elements in each thread in arr
-    int*  medians  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
-    
-    pthread_barrier_t* bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
-    for (int i = 0; i < NT; i++)
-        pthread_barrier_init(bar_pair + i, NULL, 2);
-    
-    // let T = 16, then
-    // bar_group = [ 0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
-    // b_counts = [16, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2]
-    // num_bs_g =  1  +  2  +     4     +          8
+    //Create Barriers
+    int t = 0;
+    pthread_barrier_t *bar_pair, *bar_group; 
+    bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
+    for (t = 0; t < NT; t++) {
+        pthread_barrier_init(bar_pair + t, NULL, 2);
+    }
     int bar_group_count = 0;
-    for (int j = 1; j < NT; j = j << 1)
-        bar_group_count += j;  
-    pthread_barrier_t* bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
-    int l = 0;
-    for (int j = 1; j < NT; j = j << 1)
-        for (int k = 0; k < j; k++)
-            pthread_barrier_init(bar_group + l++, NULL, NT / j);
-    
+    for (t = 1; t < NT; t = t << 1)
+        bar_group_count += t;  
+    bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
+    int loop, bpg_index = 0;
+    for (t = 1; t < NT; t = t << 1) {
+        for (loop = 0; loop < t; loop++) {
+            pthread_barrier_init(bar_group + bpg_index, NULL, NT / t);
+            bpg_index++;
+        }
+    }
+
+    //Create Shared Memory
+    int NT_int_arr = sizeof(int*) * NT;
+    int NT_int = sizeof(int) * NT;
+    int ** thread_local_arr = (int **) (malloc(NT_int_arr));
+    int * local_sizes = (int *) (malloc(NT_int));
+    int ** exchange_arr = (int **) (malloc(NT_int_arr));
+    int * exchange_arr_sizes = (int *) (malloc(NT_int));
+    int * pivots = (int *) (malloc(NT_int));
+    int * medians = (int *) (malloc(NT_int));
+
+    //Create Threads
+    pthread_t threads[NT];
     static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, pivots, local_sizes, medians, bar_pair, bar_group};
-    pthread_t* threads = (pthread_t*) malloc(NT * sizeof(pthread_t));
     
-    // fork
-    for (int i = 0; i < NT; i++) {
+    for (t = 0; t < NT; t++) {
         // malloc because otherwise it will reuse pointers or something
         args_t* targs = (args_t*) malloc(sizeof(args_t));
-        targs->threadid = i;
+        targs->threadid = t;
         targs->static_args = &static_args;
-        pthread_create(threads + i, NULL, global_sort, (void*) targs);
+        pthread_create(threads + t, NULL, global_sort, (void*) targs);
     }
     
     // join
@@ -119,7 +124,6 @@ int main(int ac, char** av) {
     free(pivots);
     free(local_sizes);
     free(medians);
-    free(threads);
     for (int i = 0; i < NT; i++)
         pthread_barrier_destroy(bar_pair + i);
     for (int i = 0; i < bar_group_count; i++)
