@@ -35,9 +35,9 @@ static void local_sort(int* arr, const int begin, const int end) {
 
 
 typedef struct static_args_t {
-    unsigned int   N;
+    int   N;
     int NT;
-    unsigned char  strat;
+    char  strat;
     int **thread_local_arr, **exchange_arr;
     int *arr, *exchange_arr_sizes, *pivots, *local_sizes, *medians;
     pthread_barrier_t *bar_pair, *bar_group;
@@ -54,9 +54,9 @@ static void* global_sort(void* targs) {
     const args_t*        args   = (args_t*) targs;
     const int threadid    = args->threadid;         // thread num
     const static_args_t* s_args = args->static_args;
-    const unsigned int   N      = s_args->N;         // input size
+    const int   N      = s_args->N;         // input size
     const int NT      = s_args->NT;         // num threads
-    const unsigned char  strat      = s_args->strat;         // pivot strategy
+    const char  strat      = s_args->strat;         // pivot strategy
     int*  arr   = s_args->arr;  // global input array
     int** thread_local_arr  = s_args->thread_local_arr; // local subarrays
     int** exchange_arr  = s_args->thread_local_arr; // local subarrays shifted to pivot index
@@ -69,9 +69,9 @@ static void* global_sort(void* targs) {
 
     // inclusive lower bound of this thread's subarray on arr
     int chunk_size = N / NT;
-    unsigned int begin = threadid * chunk_size;
+    int begin = threadid * chunk_size;
     // inclusive upper bound of this thread's subarray on arr
-    unsigned int end = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
+    int end = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
     // total number of elements in this thread's subarray on arr
     chunk_size = end - begin + 1;
 
@@ -88,8 +88,8 @@ static void* global_sort(void* targs) {
 
     int localid, groupid, exchangeid; // local id, group id, partner thread id
     int pivot;                        // value of pivot element
-    unsigned int local_arr_size;              // number of elements of subarray split according to p
-    unsigned int local_arr_index;          // index shift of local subarray to reach split
+    int local_arr_size;              // number of elements of subarray split according to p
+    int local_arr_index;          // index shift of local subarray to reach split
 
     // for finding the correct barriers in the collective arrays
     int group_barrier_id = 0;
@@ -203,7 +203,7 @@ static void* global_sort(void* targs) {
     if (NT > 1) // else bar_group was never allocated
         pthread_barrier_wait(bar_group);
     // find location of local subarray on arr
-    unsigned int n_prev = 0;
+    int n_prev = 0;
     for (int i = 0; i < threadid; i++)
         n_prev += local_sizes[i];
     // copy
