@@ -111,7 +111,6 @@ int main(int ac, char** av) {
         exchange_arr_sizes, pivots, local_sizes, medians, 
         bar_pair, bar_group
     };
-    
     for (t = 0; t < NT; t++) {
         thread_data_t* t_args = (thread_data_t*) malloc(sizeof(thread_data_t));
         t_args->threadid = t;
@@ -119,23 +118,26 @@ int main(int ac, char** av) {
         pthread_create(threads + t, NULL, global_sort, (void*) t_args);
     }
     
-    // join
+    //Join Threads
     for (int i = 0; i < NT; i++)
         pthread_join(threads[i], NULL);
     
-    // free shared memory
-    free(thread_local_arr);
-    free(exchange_arr);
-    free(exchange_arr_sizes);
-    free(pivots);
-    free(local_sizes);
-    free(medians);
-    for (int i = 0; i < NT; i++)
-        pthread_barrier_destroy(bar_pair + i);
-    for (int i = 0; i < bar_group_count; i++)
-        pthread_barrier_destroy(bar_group + i);
-    free(bar_pair);
+    //Free Shared Memory
+    free(thread_local_arr); free(local_sizes);
+    free(exchange_arr); free(exchange_arr_sizes);
+    free(pivots); free(medians);
+
+    //Destroy Barriers
+    for(t = 0; t < NT; t++) {
+        pthread_barrier_destroy(bar_pair + t);
+    }
+    for(t = 0; t < bar_group_count; t++) {
+        pthread_barrier_destroy(bar_group + t);
+    }
+
+    //Free Barriers
     free(bar_group);
+    free(bar_pair);
     
     stop = get_time();
     printf("Sorting time(s): %lf\n", stop - start);
