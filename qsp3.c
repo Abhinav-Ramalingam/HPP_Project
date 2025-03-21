@@ -53,42 +53,6 @@ static void serial_qs(int* arr, const int lo, const int hi) {
 }
 
 /**
- * Check if an array is sorted
-*/
-#ifdef CHECK_SORTED
-static int sorted(const int* arr, const unsigned int N, char* filename) {
-    // check sorted trusting that no elements are missing
-    for (unsigned int i = 0; i < N - 1; i++)
-        if (arr[i] > arr[i + 1])
-            return 0;
-    // check sorted trusting that serial qs is correct
-    int* ys = read_file(filename, N);
-    serial_qs(ys, 0, N - 1);
-    for (unsigned int i = 0; i < N; i++)
-        if (arr[i] != ys[i]) {
-            free(ys);
-            return 0;
-        }
-    free(ys);
-    return 1;
-}
-#endif
-
-/**
- * Check if the array is complete
- * i.e. contains the same elements before and afer sorting
- * only for contiguous input
-*/
-#ifdef CHECK_COMPLETE
-static int complete(const int* arr, const unsigned int N) {
-    for (unsigned int i = 0; i < N - 1; i++)
-        if (arr[i] != i)
-            return 0;
-    return 1;
-}
-#endif
-
-/**
  * Find split point of an array according to a pivot element
  * https://en.wikipedia.org/wiki/Binary_search_algorithm
 */
