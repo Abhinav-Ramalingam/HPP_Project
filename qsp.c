@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
-#include <omp.h>
+#include <time.h>
 
 typedef struct thread_const_data_t {
     int   N;
