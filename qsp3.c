@@ -5,32 +5,27 @@
 #include <sys/time.h>
 
 // Standard quicksort function
-static void local_sort(int* arr, const int begin, const int end) {
-    if (begin < end) {
-        const int middle = begin + ((end - begin) >> 1);
-        const int pivot = arr[middle];
-        int temp = arr[middle];
-        arr[middle] = arr[end];
-        arr[end] = temp;
-        
-        int i = begin - 1;
-        for (int j = begin; j < end; j++) {
-            if (arr[j] <= pivot) {
-                i++;
-                temp = arr[i];
-                arr[i] = arr[j];
-                arr[j] = temp;
-            }
+void local_sort(int *arr, int begin, int end) {
+    if (begin >= end) return;
+
+    int pivot = arr[end]; 
+    int i = begin - 1;
+
+    for (int j = begin; j < end; j++) {
+        if (arr[j] <= pivot) {
+            i++;
+            int temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
         }
-        
-        i++;
-        temp = arr[i];
-        arr[i] = arr[end];
-        arr[end] = temp;
-        
-        local_sort(arr, begin, i - 1);
-        local_sort(arr, i + 1, end);
     }
+
+    int temp = arr[i + 1];
+    arr[i + 1] = arr[end];
+    arr[end] = temp;
+
+    local_sort(arr, begin, i);
+    local_sort(arr, i + 2, end);
 }
 
 
