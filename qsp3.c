@@ -84,7 +84,7 @@ static void* global_sort(void* targs) {
     // sort subarray locally
     local_sort(local_arr, 0, n - 1);
 
-    int lid, groupid, exchangeid; // local id, group id, partner thread id
+    int localid, groupid, exchangeid; // local id, group id, partner thread id
     int pivot;                        // value of pivot element
     unsigned int local_arr_size;              // number of elements of subarray split according to p
     unsigned int local_arr_index;          // index shift of local subarray to reach split
@@ -97,7 +97,7 @@ static void* global_sort(void* targs) {
     // divide threads into groups until no smaller groups can be formed
     while (tpg > 1) {
 
-        lid = threadid % tpg;
+        localid = threadid % tpg;
         groupid = threadid / tpg;
 
         // update current median if elements exist
@@ -109,7 +109,7 @@ static void* global_sort(void* targs) {
         // otherwise they might split by the pivot element of the next iteration
         // also their median might not be updated yet
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
-        if (lid == 0) {
+        if (localid == 0) {
             if (S == 1) {
                 // strategy 1
                 // median of thread 0 of each group
@@ -147,7 +147,7 @@ static void* global_sort(void* targs) {
 
 
         // send data
-        if (lid < (tpg >> 1)) {
+        if (localid < (tpg >> 1)) {
             // send upper part
             exchangeid      = threadid + (tpg >> 1); // remote partner id
             local_arr_index   = 0;              // local shift to fit split point
