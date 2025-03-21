@@ -77,14 +77,15 @@ static void* global_sort(void* targs) {
     // copy to local subarray otherwise reallocating won't work
     int* ys  = (int*) malloc(n * sizeof(int));
     thread_local_arr[threadid] = ys;
-    memcpy(ys, arr + lo, n * sizeof(int));
+    memcpy(ys
+        , arr + lo, n * sizeof(int));
     int* merged_arr;
     medians[threadid] = 0;
 
     // sort subarray locally
     local_sort(ys, 0, n - 1);
 
-    int lid, gid, rid; // local id, group id, partner thread id
+    int lid, groupid, exchangeid; // local id, group id, partner thread id
     int t = NT;         // threads per group
     int p;                        // value of pivot element
     unsigned int local_arr_size;              // number of elements of subarray split according to p
@@ -99,7 +100,7 @@ static void* global_sort(void* targs) {
     while (t > 1) {
 
         lid = threadid % t;
-        gid = threadid / t;
+        groupid = threadid / t;
 
         // update current median if elements exist
         // what is a good solution for n == 0?
@@ -109,7 +110,7 @@ static void* global_sort(void* targs) {
         // wait for threads to finish splitting in previous iteration
         // otherwise they might split by the pivot element of the next iteration
         // also their median might not be updated yet
-        pthread_barrier_wait(bar_group + group_barrier_id + gid);
+        pthread_barrier_wait(bar_group + group_barrier_id + groupid);
         if (lid == 0) {
             if (S == 1) {
                 // strategy 1
@@ -135,7 +136,7 @@ static void* global_sort(void* targs) {
             for (int i = threadid; i < threadid + t; i++)
                     pivots[i] = p;
         }
-        pthread_barrier_wait(bar_group + group_barrier_id + gid);
+        pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
         // find split point according to pivot element
         p = pivots[threadid];
@@ -144,21 +145,21 @@ static void* global_sort(void* targs) {
             s++;
         }
 
-        pthread_barrier_wait(bar_group + group_barrier_id + gid);
+        pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
 
         // send data
         if (lid < (t >> 1)) {
             // send upper part
-            rid      = threadid + (t >> 1); // remote partner id
+            exchangeid      = threadid + (t >> 1); // remote partner id
             local_arr_index   = 0;              // local shift to fit split point
             local_arr_size       = s;              // local size of lower part
             exchange_arr[threadid] = ys + s;         // remote shift to fit split point
             exchange_arr_sizes[threadid] = n - s;          // remote size of parnter's lower part
-            pair_barrier_id = rid;      // shift to find partner's barrier
+            pair_barrier_id = exchangeid;      // shift to find partner's barrier
         } else {
             // send lower part
-            rid      = threadid - (t >> 1);
+            exchangeid      = threadid - (t >> 1);
             local_arr_index   = s;
             local_arr_size       = n - s;
             exchange_arr[threadid] = ys;
@@ -169,22 +170,22 @@ static void* global_sort(void* targs) {
         pthread_barrier_wait(bar_pair + pair_barrier_id);
 
         // merge local and remote elements in place of new local subarray
-        n = local_arr_size + exchange_arr_sizes[rid];
+        n = local_arr_size + exchange_arr_sizes[exchangeid];
         merged_arr = (int*) malloc(n * sizeof(int));
         
         int i = 0, j = 0, k = 0;
-        while (j < local_arr_size && k < exchange_arr_sizes[rid]) {
-            if ((ys + local_arr_index)[j] < exchange_arr[rid][k]) {
+        while (j < local_arr_size && k < exchange_arr_sizes[exchangeid]) {
+            if ((ys + local_arr_index)[j] < exchange_arr[exchangeid][k]) {
                 merged_arr[i++] = (ys + local_arr_index)[j++];
             } else {
-                merged_arr[i++] = exchange_arr[rid][k++];
+                merged_arr[i++] = exchange_arr[exchangeid][k++];
             }
         }
         while (j < local_arr_size) {
             merged_arr[i++] = (ys + local_arr_index)[j++];
         }
-        while (k < exchange_arr_sizes[rid]) {
-            merged_arr[i++] = exchange_arr[rid][k++];
+        while (k < exchange_arr_sizes[exchangeid]) {
+            merged_arr[i++] = exchange_arr[exchangeid][k++];
         }
 
         
