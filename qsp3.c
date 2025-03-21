@@ -166,21 +166,25 @@ int main(int ac, char** av) {
 }
 
 void* global_sort(void* t_args) {
+    const thread_data_t* args   = (thread_data_t*) t_args;
 
-    // copy input
-    const thread_data_t*        args   = (thread_data_t*) t_args;
+    //Copy arguments to local variables
     const int threadid    = args->threadid;      
     const thread_const_data_t* s_args = args->t_const_args;
     const int   N      = s_args->N;     
     const int NT      = s_args->NT;       
     const char  strat      = s_args->strat;      
     int*  arr   = s_args->arr;  
+
     int** thread_local_arr  = s_args->thread_local_arr;
+    int*  local_sizes   = s_args->local_sizes; 
+
     int** exchange_arr  = s_args->thread_local_arr; 
     int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; 
+    
     int*  pivots   = s_args->pivots;  
-    int*  local_sizes   = s_args->local_sizes; 
-    int*  medians   = s_args->medians;  
+    int*  medians   = s_args->medians;
+
     pthread_barrier_t* bar_pair = s_args->bar_pair; 
     pthread_barrier_t* bar_group = s_args->bar_group;
 
@@ -194,6 +198,7 @@ void* global_sort(void* t_args) {
     int* local_arr  = (int*) malloc(local_size);
     thread_local_arr[threadid] = local_arr;
     memcpy(local_arr, arr + begin, local_size);
+    
     int* merged_arr;
     medians[threadid] = 0;
 
