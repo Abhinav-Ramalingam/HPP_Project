@@ -52,29 +52,7 @@ static void serial_qs(int* arr, const int lo, const int hi) {
     }
 }
 
-/**
- * Find split point of an array according to a pivot element
- * https://en.wikipedia.org/wiki/Binary_search_algorithm
-*/
-static int split(const int* arr, const unsigned int n, const int p) {
-    int s, lo = 0, mi, hi = n - 1;
-    while (lo < hi) {
-        mi = lo + ((hi - lo) >> 1);
-        if (p < arr[mi])
-            hi = mi - 1;
-        else
-            lo = mi + 1;
-    }
-    // right shift split into place after unsuccessful search
-    for (s = hi - 1; (s < n && arr[s] <= p) || s < 0; s++);
-    return s;
-}
 
-
-/**
- * Input arguments for the thread workers,
- * only the thread id changes per thread
-*/
 typedef struct static_args_t {
     unsigned int   N;
     int T;
@@ -128,7 +106,6 @@ static void* thread_worker(void* targs) {
     int lid, gid, rid; // local id, group id, partner thread id
     int t = T;         // threads per group
     int p;                        // value of pivot element
-    unsigned int s;               // index of pivot element + 1
     unsigned int local_arr_size;              // number of elements of subarray split according to p
     unsigned int local_arr_index;          // index shift of local subarray to reach split
 
@@ -181,7 +158,10 @@ static void* thread_worker(void* targs) {
 
         // find split point according to pivot element
         p = ps[tid];
-        s = split(ys, n, p);
+        int s = 0;
+        while (s < n && ys[s] <= p) {
+            s++;
+        }
 
         pthread_barrier_wait(bar_group + group_barrier_id + gid);
 
