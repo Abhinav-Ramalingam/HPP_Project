@@ -10,9 +10,9 @@
 */
 static int* read_file(char* filename, const int N) {
     
-    int* xs = (int*) malloc(N * sizeof(int));
+    int* arr = (int*) malloc(N * sizeof(int));
     FILE* file = fopen(filename, "r");
-    int m = fread(xs, sizeof(int), N, file);
+    int m = fread(arr, sizeof(int), N, file);
     fclose(file);
 
     if (m != N) {
@@ -20,7 +20,7 @@ static int* read_file(char* filename, const int N) {
         exit(-1);
     }
 
-    return xs;
+    return arr;
 }
 
 /**
@@ -37,18 +37,18 @@ static void swap(int* x, int* y) {
  * Use classic quicksort on a subsection of an array
  * https://en.wikipedia.org/wiki/Quicksort
 */
-static void serial_qs(int* xs, const int lo, const int hi) {
+static void serial_qs(int* arr, const int lo, const int hi) {
     if (lo < hi) {
         const int mi = lo + ((hi - lo) >> 1);
-        const int p = xs[mi];
-        swap(xs + mi, xs + hi);
+        const int p = arr[mi];
+        swap(arr + mi, arr + hi);
         int i = lo - 1;
         for (int j = lo; j < hi; j++)
-            if (xs[j] <= p)
-                swap(xs + ++i, xs + j);
-        swap(xs + ++i, xs + hi);
-        serial_qs(xs, lo, i - 1);
-        serial_qs(xs, i + 1, hi);
+            if (arr[j] <= p)
+                swap(arr + ++i, arr + j);
+        swap(arr + ++i, arr + hi);
+        serial_qs(arr, lo, i - 1);
+        serial_qs(arr, i + 1, hi);
     }
 }
 
@@ -56,16 +56,16 @@ static void serial_qs(int* xs, const int lo, const int hi) {
  * Check if an array is sorted
 */
 #ifdef CHECK_SORTED
-static int sorted(const int* xs, const unsigned int N, char* filename) {
+static int sorted(const int* arr, const unsigned int N, char* filename) {
     // check sorted trusting that no elements are missing
     for (unsigned int i = 0; i < N - 1; i++)
-        if (xs[i] > xs[i + 1])
+        if (arr[i] > arr[i + 1])
             return 0;
     // check sorted trusting that serial qs is correct
     int* ys = read_file(filename, N);
     serial_qs(ys, 0, N - 1);
     for (unsigned int i = 0; i < N; i++)
-        if (xs[i] != ys[i]) {
+        if (arr[i] != ys[i]) {
             free(ys);
             return 0;
         }
@@ -80,9 +80,9 @@ static int sorted(const int* xs, const unsigned int N, char* filename) {
  * only for contiguous input
 */
 #ifdef CHECK_COMPLETE
-static int complete(const int* xs, const unsigned int N) {
+static int complete(const int* arr, const unsigned int N) {
     for (unsigned int i = 0; i < N - 1; i++)
-        if (xs[i] != i)
+        if (arr[i] != i)
             return 0;
     return 1;
 }
@@ -92,31 +92,31 @@ static int complete(const int* xs, const unsigned int N) {
  * Find split point of an array according to a pivot element
  * https://en.wikipedia.org/wiki/Binary_search_algorithm
 */
-static int split(const int* xs, const unsigned int n, const int p) {
+static int split(const int* arr, const unsigned int n, const int p) {
     int s, lo = 0, mi, hi = n - 1;
     while (lo < hi) {
         mi = lo + ((hi - lo) >> 1);
-        if (p < xs[mi])
+        if (p < arr[mi])
             hi = mi - 1;
         else
             lo = mi + 1;
     }
     // right shift split into place after unsuccessful search
-    for (s = hi - 1; (s < n && xs[s] <= p) || s < 0; s++);
+    for (s = hi - 1; (s < n && arr[s] <= p) || s < 0; s++);
     return s;
 }
 
 /**
- * Merge two arrays ys and zs on xs
+ * Merge two arrays ys and zs on arr
  * as taken from the lecture
 */
-static void merge(int* xs, const int* ys, const int* zs, const unsigned int y_n, const unsigned int z_n) {
+static void merge(int* arr, const int* ys, const int* zs, const unsigned int y_n, const unsigned int z_n) {
     int i = 0, j = 0, k = 0;
     while (j < y_n && k < z_n)
-        if (ys[j] < zs[k])  xs[i++] = ys[j++];
-        else                xs[i++] = zs[k++];
-    for (; j < y_n; j++)    xs[i++] = ys[j];
-    for (; k < z_n; k++)    xs[i++] = zs[k];
+        if (ys[j] < zs[k])  arr[i++] = ys[j++];
+        else                arr[i++] = zs[k++];
+    for (; j < y_n; j++)    arr[i++] = ys[j];
+    for (; k < z_n; k++)    arr[i++] = zs[k];
 }
 
 /**
@@ -128,7 +128,7 @@ typedef struct static_args_t {
     unsigned short T;
     unsigned char  S;
     int **yss, **rss;
-    int *xs, *rns, *ps, *ns, *ms;
+    int *arr, *rns, *ps, *ns, *ms;
     pthread_barrier_t *bs_local, *bs_group;
 } static_args_t;
 
@@ -146,7 +146,7 @@ static void* thread_worker(void* targs) {
     const unsigned int   N      = s_args->N;         // input size
     const unsigned short T      = s_args->T;         // num threads
     const unsigned char  S      = s_args->S;         // pivot strategy
-    int*  xs   = s_args->xs;  // global input array
+    int*  arr   = s_args->arr;  // global input array
     int** yss  = s_args->yss; // local subarrays
     int** rss  = s_args->yss; // local subarrays shifted to pivot index
     int*  rns  = s_args->rns; // size from/to pivot index in local subarrays
@@ -156,17 +156,17 @@ static void* thread_worker(void* targs) {
     pthread_barrier_t* bs_local = s_args->bs_local; // pairs barriers
     pthread_barrier_t* bs_group = s_args->bs_group; // group barriers
 
-    // inclusive lower bound of this thread's subarray on xs
+    // inclusive lower bound of this thread's subarray on arr
     unsigned int lo = tid * (N / T);
-    // inclusive upper bound of this thread's subarray on xs
+    // inclusive upper bound of this thread's subarray on arr
     unsigned int hi = tid < T - 1 ? (tid + 1) * (N / T) - 1 : N - 1;
-    // total number of elements in this thread's subarray on xs
+    // total number of elements in this thread's subarray on arr
     unsigned int n = hi - lo + 1;
 
     // copy to local subarray otherwise reallocating won't work
     int* ys  = (int*) malloc(n * sizeof(int));
     yss[tid] = ys;
-    memcpy(ys, xs + lo, n * sizeof(int));
+    memcpy(ys, arr + lo, n * sizeof(int));
     int* zs;
     ms[tid] = 0;
 
@@ -270,17 +270,17 @@ static void* thread_worker(void* targs) {
         num_gs          = num_gs << 1; // double number of groups
     }
 
-    // merge local subarrays back into xs
-    // reservate space on xs
+    // merge local subarrays back into arr
+    // reservate space on arr
     ns[tid] = n;
     if (T > 1) // else bs_group was never allocated
         pthread_barrier_wait(bs_group);
-    // find location of local subarray on xs
+    // find location of local subarray on arr
     unsigned int n_prev = 0;
     for (unsigned short i = 0; i < tid; i++)
         n_prev += ns[i];
     // copy
-    memcpy(xs + n_prev, ys, n * sizeof(int));
+    memcpy(arr + n_prev, ys, n * sizeof(int));
 
     // free thread local memory
     free(targs);
@@ -288,67 +288,6 @@ static void* thread_worker(void* targs) {
     return NULL;
 }
 
-/**
- * Use parallel quicksort on an array
- * as interpreted from QuickSort.pdf
-*/
-void parallel_qs(int* xs, const unsigned int N, const unsigned short T, const unsigned char S) {
-
-    int** yss = (int**) malloc(T * sizeof(int*)); // local subarrays
-    int** rss = (int**) malloc(T * sizeof(int*)); // remote subarrays
-    int*  rns = (int*)  malloc(T * sizeof(int )); // number of elements 'sent'
-    int*  ps  = (int*)  malloc(T * sizeof(int )); // pivot element for each thread
-    int*  ns  = (int*)  malloc(T * sizeof(int )); // number of elements in each thread in xs
-    int*  ms  = (int*)  malloc(T * sizeof(int )); // median of each subarray
-
-    pthread_barrier_t* bs_local = (pthread_barrier_t*) malloc(T * sizeof(pthread_barrier_t));
-    for (unsigned short i = 0; i < T; i++)
-        pthread_barrier_init(bs_local + i, NULL, 2);
-
-    // let T = 16, then
-    // bs_group = [ 0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
-    // b_counts = [16, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2]
-    // num_bs_g =  1  +  2  +     4     +          8
-    unsigned short num_bs_group = 0;
-    for (unsigned short j = 1; j < T; j = j << 1)
-        num_bs_group += j;  
-    pthread_barrier_t* bs_group = (pthread_barrier_t*) malloc(num_bs_group * sizeof(pthread_barrier_t));
-    unsigned short l = 0;
-    for (unsigned short j = 1; j < T; j = j << 1)
-        for (unsigned short k = 0; k < j; k++)
-            pthread_barrier_init(bs_group + l++, NULL, T / j);
-
-    static_args_t static_args = {N, T, S, yss, rss, xs, rns, ps, ns, ms, bs_local, bs_group};
-    pthread_t* threads = (pthread_t*) malloc(T * sizeof(pthread_t));
-
-    // fork
-    for (unsigned short i = 0; i < T; i++) {
-        // malloc because otherwise it will reuse pointers or something
-        args_t* targs = (args_t*) malloc(sizeof(args_t));
-        targs->tid = i;
-        targs->static_args = &static_args;
-        pthread_create(threads + i, NULL, thread_worker, (void*) targs);
-    }
-
-    // join
-    for (unsigned short i = 0; i < T; i++)
-        pthread_join(threads[i], NULL);
-
-    // free shared memory
-    free(yss);
-    free(rss);
-    free(rns);
-    free(ps);
-    free(ns);
-    free(ms);
-    free(threads);
-    for (unsigned short i = 0; i < T; i++)
-        pthread_barrier_destroy(bs_local + i);
-    for (unsigned short i = 0; i < num_bs_group; i++)
-        pthread_barrier_destroy(bs_group + i);
-    free(bs_local);
-    free(bs_group);
-}
 
 int main(int ac, char** av) {
 
@@ -398,7 +337,61 @@ int main(int ac, char** av) {
 
 
     /**** PHASE 2: SORT INPUT ****/
-    parallel_qs(arr, N, NT, strat);
+    int** yss = (int**) malloc(NT * sizeof(int*)); // local subarrays
+    int** rss = (int**) malloc(NT * sizeof(int*)); // remote subarrays
+    int*  rns = (int*)  malloc(NT * sizeof(int )); // number of elements 'sent'
+    int*  ps  = (int*)  malloc(NT * sizeof(int )); // pivot element for each thread
+    int*  ns  = (int*)  malloc(NT * sizeof(int )); // number of elements in each thread in arr
+    int*  ms  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
+    
+    pthread_barrier_t* bs_local = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
+    for (unsigned short i = 0; i < NT; i++)
+        pthread_barrier_init(bs_local + i, NULL, 2);
+    
+    // let T = 16, then
+    // bs_group = [ 0, 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
+    // b_counts = [16, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2]
+    // num_bs_g =  1  +  2  +     4     +          8
+    unsigned short num_bs_group = 0;
+    for (unsigned short j = 1; j < NT; j = j << 1)
+        num_bs_group += j;  
+    pthread_barrier_t* bs_group = (pthread_barrier_t*) malloc(num_bs_group * sizeof(pthread_barrier_t));
+    unsigned short l = 0;
+    for (unsigned short j = 1; j < NT; j = j << 1)
+        for (unsigned short k = 0; k < j; k++)
+            pthread_barrier_init(bs_group + l++, NULL, NT / j);
+    
+    static_args_t static_args = {N, NT, strat, yss, rss, arr, rns, ps, ns, ms, bs_local, bs_group};
+    pthread_t* threads = (pthread_t*) malloc(NT * sizeof(pthread_t));
+    
+    // fork
+    for (unsigned short i = 0; i < NT; i++) {
+        // malloc because otherwise it will reuse pointers or something
+        args_t* targs = (args_t*) malloc(sizeof(args_t));
+        targs->tid = i;
+        targs->static_args = &static_args;
+        pthread_create(threads + i, NULL, thread_worker, (void*) targs);
+    }
+    
+    // join
+    for (unsigned short i = 0; i < NT; i++)
+        pthread_join(threads[i], NULL);
+    
+    // free shared memory
+    free(yss);
+    free(rss);
+    free(rns);
+    free(ps);
+    free(ns);
+    free(ms);
+    free(threads);
+    for (unsigned short i = 0; i < NT; i++)
+        pthread_barrier_destroy(bs_local + i);
+    for (unsigned short i = 0; i < num_bs_group; i++)
+        pthread_barrier_destroy(bs_group + i);
+    free(bs_local);
+    free(bs_group);
+    
 
     /**** PHASE 3: WRITE OUTPUT TO FILE ****/
     FILE *output_fp = fopen(outputfile, "w");
