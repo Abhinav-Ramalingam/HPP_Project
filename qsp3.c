@@ -302,7 +302,8 @@ void* global_sort(void* t_args) {
         // iterate
         free(local_arr);
         local_arr = merged_arr;           
-        thread_local_arr[threadid] = local_arr;        
+        thread_local_arr[threadid] = local_arr;      
+          
         group_barrier_id += gpi; //Move on to using the next set of barriers for groups of threads
         tpg = tpg >> 1; //Divide the number of threads/group by 2
         gpi = gpi << 1; //Multiply the number of groups/iterations by 2
