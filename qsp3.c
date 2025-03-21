@@ -71,7 +71,6 @@ static int split(const int* arr, const unsigned int n, const int p) {
 }
 
 
-
 /**
  * Input arguments for the thread workers,
  * only the thread id changes per thread
@@ -81,7 +80,7 @@ typedef struct static_args_t {
     unsigned short T;
     unsigned char  S;
     int **thread_local_arr, **exchange_arr;
-    int *arr, *exchange_arr_sizes, *ps, *ns, *ms;
+    int *arr, *exchange_arr_sizes, *ps, *ns, *medians;
     pthread_barrier_t *bar_pair, *bar_group;
 } static_args_t;
 
@@ -105,7 +104,7 @@ static void* thread_worker(void* targs) {
     int*  exchange_arr_sizes  = s_args->exchange_arr_sizes; // size from/to pivot index in local subarrays
     int*  ps   = s_args->ps;  // pivot elements per local subarray
     int*  ns   = s_args->ns;  // size of local subarrays
-    int*  ms   = s_args->ns;  // median elements per local subarray
+    int*  medians   = s_args->ns;  // median elements per local subarray
     pthread_barrier_t* bar_pair = s_args->bar_pair; // pairs barriers
     pthread_barrier_t* bar_group = s_args->bar_group; // group barriers
 
@@ -121,7 +120,7 @@ static void* thread_worker(void* targs) {
     thread_local_arr[tid] = ys;
     memcpy(ys, arr + lo, n * sizeof(int));
     int* merged_arr;
-    ms[tid] = 0;
+    medians[tid] = 0;
 
     // sort subarray locally
     serial_qs(ys, 0, n - 1);
@@ -147,7 +146,7 @@ static void* thread_worker(void* targs) {
         // update current median if elements exist
         // what is a good solution for n == 0?
         if (n > 0)
-            ms[tid] = ys[n >> 1];
+            medians[tid] = ys[n >> 1];
 
         // wait for threads to finish splitting in previous iteration
         // otherwise they might split by the pivot element of the next iteration
@@ -157,22 +156,22 @@ static void* thread_worker(void* targs) {
             if (S == 1) {
                 // strategy 1
                 // median of thread 0 of each group
-                p = ms[tid];
+                p = medians[tid];
             } else if (S == 2) {
                 // strategy 2
                 // mean of all medians in a group
                 long int mm = 0;
                 for (unsigned short i = tid; i < tid + t; i++)
-                    mm += ms[i];
+                    mm += medians[i];
                 p = mm / t;
             } else if (S == 3) {
                 // strategy 3
                 // mean of center 2 medians in a group
-                serial_qs(ms, tid, tid + t - 1);
-                p = (ms[tid + (t >> 1) - 1] + ms[tid + (t >> 1)]) >> 1;
+                serial_qs(medians, tid, tid + t - 1);
+                p = (medians[tid + (t >> 1) - 1] + medians[tid + (t >> 1)]) >> 1;
             } else {
                 // default to strategy 1
-                p = ms[tid];
+                p = medians[tid];
             }
             // distribute pivot element within group
             for (unsigned short i = tid; i < tid + t; i++)
@@ -311,7 +310,7 @@ int main(int ac, char** av) {
     int*  exchange_arr_sizes = (int*)  malloc(NT * sizeof(int )); // number of elements 'sent'
     int*  ps  = (int*)  malloc(NT * sizeof(int )); // pivot element for each thread
     int*  ns  = (int*)  malloc(NT * sizeof(int )); // number of elements in each thread in arr
-    int*  ms  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
+    int*  medians  = (int*)  malloc(NT * sizeof(int )); // median of each subarray
     
     pthread_barrier_t* bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
     for (unsigned short i = 0; i < NT; i++)
@@ -330,7 +329,7 @@ int main(int ac, char** av) {
         for (unsigned short k = 0; k < j; k++)
             pthread_barrier_init(bar_group + l++, NULL, NT / j);
     
-    static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, ps, ns, ms, bar_pair, bar_group};
+    static_args_t static_args = {N, NT, strat, thread_local_arr, exchange_arr, arr, exchange_arr_sizes, ps, ns, medians, bar_pair, bar_group};
     pthread_t* threads = (pthread_t*) malloc(NT * sizeof(pthread_t));
     
     // fork
@@ -352,7 +351,7 @@ int main(int ac, char** av) {
     free(exchange_arr_sizes);
     free(ps);
     free(ns);
-    free(ms);
+    free(medians);
     free(threads);
     for (unsigned short i = 0; i < NT; i++)
         pthread_barrier_destroy(bar_pair + i);
