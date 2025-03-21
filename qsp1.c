@@ -325,10 +325,11 @@ void* global_sort(void *args){
         local_arr = merged_arr;
         thread_local_arr[myid] = local_arr; //Copy back the modified local_arr;
 
+        group_barrier_id += gpi; //Move on to using the next set of barriers for groups of threads
         tpg = tpg >> 1; //Divide the number of threads/group by 2
         gpi = gpi << 1; //Multiply the number of groups/iterations by 2
 
-        group_barrier_id += gpi; //Move on to using the next set of barriers for groups of threads
+        
     }
     //printf("\nSuccessfully while %d\n", myid);
 
@@ -336,7 +337,7 @@ void* global_sort(void *args){
     local_sizes[myid] = chunk_size;
     
     if (NT != 1) {
-        //meaning there were multiple threads
+        //More than one thread executed
         pthread_barrier_wait(bar_groups);
     }
 
@@ -346,8 +347,6 @@ void* global_sort(void *args){
         global_loc += local_sizes[i];
     }
 
-
-    
     memcpy(arr + global_loc, local_arr, sizeof(int) * chunk_size);
 
     free(local_arr);
