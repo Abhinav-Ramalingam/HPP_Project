@@ -44,7 +44,7 @@ int main(int ac, char** av) {
     char strat = av[5][0];
 
     if(!powerof2(NT)) {
-        printf("Error: N must be a power of 2\n");
+        printf("Error: NT must be a power of 2\n");
         return 1;
     }
 
@@ -258,10 +258,19 @@ void* global_sort(void* t_args) {
 
         //Splitpoint calculation
         pivot = pivots[threadid];
-        int split = 0;
-        while (split < chunk_size && local_arr[split] <= pivot) {
-            split++;
+        int split = chunk_size;
+        int low = 0, high = chunk_size - 1;
+
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            if (local_arr[mid] > pivot) {
+                split = mid; 
+                high = mid - 1; 
+            } else {
+                low = mid + 1; 
+            }
         }
+
 
         pthread_barrier_wait(bar_group + group_barrier_id + groupid);
 
