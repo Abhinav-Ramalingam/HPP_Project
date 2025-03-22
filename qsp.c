@@ -51,14 +51,13 @@ int main(int ac, char** av) {
     double start = get_time(), stop;
 
     /**** PHASE 1: READ INPUT FROM FILE ****/
-
     int *arr = (int *)calloc(N, sizeof(int));
     if (arr == NULL) {
         perror("Memory allocation failed");
         return 1;
     }
 
-    FILE *input_fp = fopen(inputfile, "r");
+    FILE *input_fp = fopen(inputfile, "rb");  
     if (input_fp == NULL) {
         perror("Failed to open input file");
         free(arr);
@@ -67,12 +66,13 @@ int main(int ac, char** av) {
 
     // Reading integers from the input file
     for (int i = 0; i < N; i++) {
-        if (fscanf(input_fp, "%d", (arr + i)) != 1) {
+        if (fread((arr + i), sizeof(int), 1, input_fp) != 1) {
             printf("Error reading number at index %d\n", i);
             break;
         }
     }
     fclose(input_fp);
+
 
     stop = get_time();
     printf("Input time(s): %lf\n", stop - start);
@@ -142,8 +142,8 @@ int main(int ac, char** av) {
     printf("Sorting time(s): %lf\n", stop - start);
     start = stop;
 
-    /**** PHASE 3: WRITE OUTPUT TO FILE ****/
-    FILE *output_fp = fopen(outputfile, "w");
+    /**** PHASE 3: WRITE OUTPUT TO BINARY FILE ****/
+    FILE *output_fp = fopen(outputfile, "wb");  
     if (output_fp == NULL) {
         perror("Failed to open output file");
         free(arr);
@@ -151,10 +151,17 @@ int main(int ac, char** av) {
     }
 
     for (int i = 0; i < N; i++) {
-        fprintf(output_fp, "%d ", arr[i]);
+        if (fwrite(&(arr[i]), sizeof(int), 1, output_fp) != 1) {
+            perror("Error writing number to output file");
+            fclose(output_fp);
+            free(arr);
+            return 1;
+        }
     }
-    fprintf(output_fp, "\n");
+
     fclose(output_fp);
+
+
     
     free(arr);
 
