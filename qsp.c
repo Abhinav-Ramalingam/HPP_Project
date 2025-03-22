@@ -282,18 +282,22 @@ void* global_sort(void* t_args) {
         merged_arr = (int*) malloc(chunk_size * sizeof(int));
         
         int i = 0, j = 0, k = 0;
-        while (j < local_arr_size && k < exchange_arr_sizes[exchangeid]) {
-            if ((local_arr + local_arr_index)[j] < exchange_arr[exchangeid][k]) {
-                merged_arr[i++] = (local_arr + local_arr_index)[j++];
+        int * local_index = local_arr + local_arr_index;
+        int * exchange_index = exchange_arr[exchangeid];
+        int exchange_arr_size = exchange_arr_sizes[exchangeid];
+
+        while (j < local_arr_size && k < exchange_arr_size) {
+            if (local_index[j] < exchange_index[k]) {
+                merged_arr[i++] = local_index[j++];
             } else {
-                merged_arr[i++] = exchange_arr[exchangeid][k++];
+                merged_arr[i++] = exchange_index[k++];
             }
         }
         while (j < local_arr_size) {
-            merged_arr[i++] = (local_arr + local_arr_index)[j++];
+            merged_arr[i++] = local_index[j++];
         }
-        while (k < exchange_arr_sizes[exchangeid]) {
-            merged_arr[i++] = exchange_arr[exchangeid][k++];
+        while (k < exchange_arr_size) {
+            merged_arr[i++] = exchange_index[k++];
         }
 
         
