@@ -80,9 +80,7 @@ int main(int ac, char** av) {
     for (t = 0; t < NT; t++) {
         pthread_barrier_init(bar_pair + t, NULL, 2);
     }
-    int bar_group_count = 0;
-    for (t = 1; t < NT; t = t << 1)
-        bar_group_count += t;  
+    int bar_group_count = NT - 1;
     bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
     int loop, bpg_index = 0;
     for (t = 1; t < NT; t = t << 1) {
