@@ -75,15 +75,14 @@ int main(int ac, char** av) {
     /**** PHASE 2: SORT INPUT ****/
     //Create Barriers
     int t = 0;
-    pthread_barrier_t *bar_pair, *bar_group; 
-    bar_pair = (pthread_barrier_t*) malloc(NT * sizeof(pthread_barrier_t));
+    int bar_group_count = NT - 1;
+    pthread_barrier_t bar_pair[NT], bar_group[bar_group_count]; 
     for (t = 0; t < NT; t++) {
         pthread_barrier_init(bar_pair + t, NULL, 2);
     }
-    int bar_group_count = NT - 1;
-    bar_group = (pthread_barrier_t*) malloc(bar_group_count * sizeof(pthread_barrier_t));
+    
     int loop, bpg_index = 0;
-    for (t = 1; t < NT; t = t << 1) {
+    for (t = 1; t < NT; t <<= 1) {
         for (loop = 0; loop < t; loop++) {
             pthread_barrier_init(bar_group + bpg_index, NULL, NT / t);
             bpg_index++;
@@ -91,8 +90,8 @@ int main(int ac, char** av) {
     }
 
     //Create Shared Memory
-    int NT_int_arr = sizeof(int*) * NT;
-    int NT_int = sizeof(int) * NT;
+    int NT_int_arr = NT * sizeof(int*);
+    int NT_int = NT * sizeof(int);
     int ** thread_local_arr = (int **) (malloc(NT_int_arr));
     int * local_sizes = (int *) (malloc(NT_int));
     int ** exchange_arr = (int **) (malloc(NT_int_arr));
@@ -133,10 +132,6 @@ int main(int ac, char** av) {
         pthread_barrier_destroy(bar_group + t);
     }
 
-    //Free Barriers
-    free(bar_group);
-    free(bar_pair);
-    
     stop = get_time();
     printf("Sorting time(s): %lf\n", stop - start);
     start = stop;
@@ -186,7 +181,7 @@ void* global_sort(void* t_args) {
     pthread_barrier_t* bar_pair = s_args->bar_pair; 
     pthread_barrier_t* bar_group = s_args->bar_group;
 
-    int chunk_size = N / NT;
+    int chunk_size = N >> __builtin_ctz(NT);;
     int begin = threadid * chunk_size;
     int end = threadid < NT - 1 ? (threadid + 1) * chunk_size - 1 : N - 1;
     chunk_size = end - begin + 1; //Not all thread's actual chunk_size is N / NT
@@ -307,8 +302,8 @@ void* global_sort(void* t_args) {
         thread_local_arr[threadid] = local_arr;      
           
         group_barrier_id += gpi; //Move on to using the next set of barriers for groups of threads
-        tpg = tpg >> 1; //Divide the number of threads/group by 2
-        gpi = gpi << 1; //Multiply the number of groups/iterations by 2
+        tpg >>= 1; //Divide the number of threads/group by 2
+        gpi <<= 1; //Multiply the number of groups/iterations by 2
     }
 
     //Final chunk_size of the local_arr after all the swaps
