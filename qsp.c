@@ -61,7 +61,7 @@ int main(int ac, char** av) {
 
     // Reading integers from the input file
     for (int i = 0; i < N; i++) {
-        if (fscanf(input_fp, "%d", &arr[i]) != 1) {
+        if (fscanf(input_fp, "%d", (arr + i)) != 1) {
             printf("Error reading number at index %d\n", i);
             break;
         }
